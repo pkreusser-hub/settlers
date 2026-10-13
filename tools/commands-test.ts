@@ -55,6 +55,10 @@ function hashGame(game: any): string {
 // game of run().
 
 import { attackRefusal, canAttack } from '../src/net/commands';
+// EXT (trading): for runTradeRules().
+import { tradeAcceptRefusal, tradeOfferRefusal } from '../src/net/commands';
+import { MessageType } from '../src/game/player';
+import { TradeRefusal } from '../src/game/trade';
 
 interface AttackScene {
   game: any;
@@ -77,7 +81,7 @@ function attackScene(stockPreset: number, peaceMinutes: number, teams: number[])
     info.setDefaultColors();
     info.getPlayer(0).setTeam(teams[0]);
     info.getPlayer(1).setTeam(teams[1]);
-    info.setRules({ stockPreset, peaceMinutes, busyRoads: false });
+    info.setRules({ stockPreset, peaceMinutes, busyRoads: false, trading: false });
     const game = info.instantiate()! as any;
     game.rnd = new Random(0x1234, 0x5678, 0x9abc);
     const map = game.getMap();
@@ -118,6 +122,153 @@ function attackScene(stockPreset: number, peaceMinutes: number, teams: number[])
 /* Knights of player 0 on their way to a fight. */
 function knightsOut(scene: AttackScene): number {
   return 6 - scene.source.getKnightCount();
+}
+
+// ---------------------------------------------------------------------------
+// EXT (trading): the four trade commands, who may issue them and with which
+// arguments. tools/trade-test.ts checks what a trade does. The games here
+// are apart from the game of run().
+
+/* Two people with a castle each. */
+function tradeScene(trading: boolean): any {
+  const info = new GameInfo(new Random('8667715887436237'));
+  info.removeAllPlayers();
+  info.addPlayer(12, { red: 0, green: 0, blue: 0 }, 40, 40, 40);
+  info.addPlayer(13, { red: 0, green: 0, blue: 0 }, 40, 40, 40);
+  info.setDefaultColors();
+  info.setRules({ stockPreset: 0, peaceMinutes: 0, busyRoads: false, trading });
+  const game = info.instantiate()! as any;
+  game.rnd = new Random(0x1234, 0x5678, 0x9abc);
+  const map = game.getMap();
+  const size = map.getCols() * map.getRows();
+  let from = 0;
+  for (let p = 0; p < 2; p++) {
+    for (let pos = from; pos < size; pos++) {
+      if (game.canBuildCastle(pos, game.getPlayer(p)) && game.buildCastle(pos, game.getPlayer(p))) {
+        from = pos + (size >> 2);
+        break;
+      }
+    }
+  }
+  for (let i = 0; i < 20; i++) game.update();
+  return game;
+}
+
+function runTradeRules(out: string[]): void {
+  const castleOf = (game: any, p: number): number => {
+    for (const b of game.buildings) {
+      if (b.getIndex() !== 0 && b.getType() === BuildingType.TypeCastle && b.getOwner() === p) return b.getPosition();
+    }
+    return -1;
+  };
+  const state = (game: any): string => {
+    const stocks: number[] = [];
+    for (const inv of game.inventories) {
+      for (let r = 0; r < 26; r++) stocks.push(inv.getCountOf(r));
+    }
+    return JSON.stringify([game.trade.nextId, game.trade.offers, game.trade.shipments, stocks]);
+  };
+  const plank = ResourceType.TypePlank;
+  const stone = ResourceType.TypeStone;
+
+  // --- the option is off
+  const off = tradeScene(false);
+  const offState = state(off);
+  executeCommand(off, 0, { type: 'tradeOffer', pos: castleOf(off, 0), to: 1, give: plank, giveCount: 5, want: -1, wantCount: 0 });
+  executeCommand(off, 1, { type: 'tradeAccept', id: 1, pos: castleOf(off, 1) });
+  executeCommand(off, 1, { type: 'tradeDecline', id: 1 });
+  executeCommand(off, 0, { type: 'tradeCancel', id: 1 });
+  check(out, 'EXT trade commands in a game without trading do nothing',
+        state(off) === offState &&
+        tradeOfferRefusal(off, off.getPlayer(0), castleOf(off, 0), 1, plank, 5, -1, 0) === TradeRefusal.Off);
+
+  // --- the option is on
+  const game = tradeScene(true);
+  const c0 = castleOf(game, 0);
+  const c1 = castleOf(game, 1);
+  const p0 = game.getPlayer(0);
+  const p1 = game.getPlayer(1);
+  const inv0 = game.getBuildingAtPos(c0).getInventory();
+  const inv1 = game.getBuildingAtPos(c1).getInventory();
+  let before = state(game);
+  const base = { type: 'tradeOffer', pos: c0, to: 1, give: plank, giveCount: 5, want: -1, wantCount: 0 };
+  const bad: Partial<Command>[] = [
+    { to: 0 }, { to: 2 }, { to: -1 }, { to: 0.5 }, { to: '1' },
+    { give: 26 }, { give: -1 }, { give: 1.5 },
+    { giveCount: 0 }, { giveCount: -5 }, { giveCount: 2.5 }, { giveCount: 101 }, { giveCount: '5' },
+    { giveCount: inv0.getCountOf(plank) + 1 }, { give: ResourceType.TypeBoat, giveCount: 100 },
+    { want: stone, wantCount: 0 }, { want: -1, wantCount: 3 }, { want: plank, wantCount: 3 },
+    { want: 26, wantCount: 3 }, { want: stone, wantCount: -1 }, { want: stone, wantCount: 1.5 },
+    { want: stone, wantCount: 101 },
+    { pos: c1 }, { pos: -1 }, { pos: 1 << 28 }, { pos: c0 + 1 },
+  ];
+  for (const change of bad) executeCommand(game, 0, { ...base, ...change } as Command);
+  executeCommand(game, 2, base);
+  executeCommand(game, -1, base);
+  check(out, `tradeOffer with invalid arguments (${bad.length} forms) or by a player who is not there does nothing`,
+        state(game) === before);
+
+  const planks0 = inv0.getCountOf(plank);
+  const planks1 = inv1.getCountOf(plank);
+  const stone0 = inv0.getCountOf(stone);
+  const stone1 = inv1.getCountOf(stone);
+  executeCommand(game, 0, base);
+  const first = game.trade.offers[0];
+  check(out, 'tradeOffer: 5 planks as a gift to player 1, who gets a message; nothing leaves the stock yet',
+        game.trade.offers.length === 1 && first.id === 1 && first.from === 0 && first.to === 1 &&
+        first.give === plank && first.giveCount === 5 && first.wantCount === 0 &&
+        p1.hasNotification() && p1.peekNotification().type === MessageType.TypeTradeOffer &&
+        inv0.getCountOf(plank) === planks0);
+  executeCommand(game, 0, { ...base, giveCount: 3, want: stone, wantCount: 2 });
+  executeCommand(game, 0, { ...base, giveCount: 1 });
+  executeCommand(game, 0, { ...base, giveCount: 2 });
+  executeCommand(game, 0, { ...base, giveCount: 4 });
+  check(out, 'tradeOffer: four are open, a fifth is refused',
+        game.trade.offers.length === 4 && game.trade.nextId === 5 &&
+        tradeOfferRefusal(game, p0, c0, 1, plank, 4, -1, 0) === TradeRefusal.TooMany);
+
+  // --- tradeAccept, tradeDecline, tradeCancel by the wrong player or with bad arguments
+  before = state(game);
+  executeCommand(game, 0, { type: 'tradeAccept', id: 1, pos: c0 });
+  executeCommand(game, 1, { type: 'tradeAccept', id: 1, pos: c0 });
+  executeCommand(game, 1, { type: 'tradeAccept', id: 1, pos: -1 });
+  executeCommand(game, 1, { type: 'tradeAccept', id: 9, pos: c1 });
+  executeCommand(game, 1, { type: 'tradeAccept', id: 1.5, pos: c1 });
+  executeCommand(game, 1, { type: 'tradeAccept', id: '1', pos: c1 });
+  executeCommand(game, 0, { type: 'tradeDecline', id: 1 });
+  executeCommand(game, 1, { type: 'tradeCancel', id: 1 });
+  executeCommand(game, 1, { type: 'tradeDecline', id: 0 });
+  executeCommand(game, 0, { type: 'tradeCancel', id: -3 });
+  executeCommand(game, 3, { type: 'tradeAccept', id: 1, pos: c1 });
+  check(out, 'tradeAccept, tradeDecline and tradeCancel by the wrong player or with invalid arguments do nothing',
+        state(game) === before && tradeAcceptRefusal(game, p0, 1, c0) === TradeRefusal.NoOffer &&
+        tradeAcceptRefusal(game, p1, 1, c0) === TradeRefusal.Stock &&
+        tradeAcceptRefusal(game, p1, 1, c1) === TradeRefusal.None);
+
+  executeCommand(game, 1, { type: 'tradeAccept', id: 1, pos: c1 });
+  check(out, 'tradeAccept by player 1: the 5 planks leave the castle of player 0 and are under way',
+        game.trade.getOffer(1) === null && game.trade.shipments.length === 1 &&
+        inv0.getCountOf(plank) === planks0 - 5 && inv1.getCountOf(plank) === planks1 &&
+        game.trade.shipments[0].count === 5 && game.trade.shipments[0].to === 1);
+  before = state(game);
+  executeCommand(game, 1, { type: 'tradeAccept', id: 1, pos: c1 });
+  check(out, 'a second tradeAccept does nothing', state(game) === before);
+  executeCommand(game, 1, { type: 'tradeAccept', id: 2, pos: c1 });
+  check(out, 'tradeAccept of the swap: 3 planks and 2 stone leave the two castles',
+        game.trade.shipments.length === 3 && inv0.getCountOf(plank) === planks0 - 8 &&
+        inv1.getCountOf(stone) === stone1 - 2);
+  executeCommand(game, 1, { type: 'tradeDecline', id: 3 });
+  executeCommand(game, 0, { type: 'tradeCancel', id: 4 });
+  check(out, 'tradeDecline by player 1 and tradeCancel by player 0 remove their offers',
+        game.trade.offers.length === 0 && game.trade.shipments.length === 3);
+  let n = 0;
+  while (game.trade.shipments.length > 0 && n < 20000) {
+    game.update();
+    n++;
+  }
+  check(out, `the goods have arrived after ${n} updates`,
+        inv1.getCountOf(plank) === planks1 + 8 && inv0.getCountOf(stone) === stone0 + 2 &&
+        inv1.getCountOf(stone) === stone1 - 2 && inv0.getCountOf(plank) === planks0 - 8);
 }
 
 function runAttackRules(out: string[]): void {
@@ -461,6 +612,8 @@ function run(): string[] {
 
   // EXT (game options and teams): see runAttackRules().
   runAttackRules(out);
+  // EXT (trading): see runTradeRules().
+  runTradeRules(out);
 
   // -------------------------------------------------------------------------
   // EXT: building controls (setBuildingPaused, setBuildingCap,

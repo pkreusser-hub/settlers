@@ -382,6 +382,8 @@ export enum PopupBoxType {
   TypeJsCalibCenter,
   TypeCtrlsInfo,
   TypeTutorialOrders,
+  // EXT: the trade window (menu/trade.ts). It has no canvas box.
+  TypeTrade,
 }
 
 export enum PopupBoxBackgroundPattern {

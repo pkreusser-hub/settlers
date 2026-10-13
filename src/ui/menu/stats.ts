@@ -343,6 +343,11 @@ function stat8Page(ctx: BoxContext): BoxView {
       label: 'Extra carriers on busy roads',
       get: () => (rules.busyRoads ? 'On' : 'Off'),
     }),
+    // EXT: trading.
+    numberRow({
+      label: 'Trading between players',
+      get: () => (rules.trading ? 'On' : 'Off'),
+    }),
   ];
 
   win.add(

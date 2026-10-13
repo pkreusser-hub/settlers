@@ -54,7 +54,7 @@ function load(text: string): Game {
 
 // EXT (game options and teams): the game of the `ext` run.
 const extTeams = [1, 1, 2, 0];
-const extRules = { stockPreset: 2, peaceMinutes: 20, busyRoads: true };
+const extRules = { stockPreset: 2, peaceMinutes: 20, busyRoads: true, trading: true };
 function extInfo(): GameInfo {
   const custom = new GameInfo(new Random('8667715887436237'));
   custom.removeAllPlayers();
@@ -69,7 +69,7 @@ function extInfo(): GameInfo {
 }
 function extState(g: Game): string {
   const teams = [0, 1, 2, 3].map((i) => g.getPlayer(i)?.getTeam() ?? -1).join('');
-  return `stock ${g.getRules().stockPreset}, peace ${g.getRules().peaceMinutes}, busy roads ${g.getRules().busyRoads ? 'on' : 'off'}, teams ${teams}`;
+  return `stock ${g.getRules().stockPreset}, peace ${g.getRules().peaceMinutes}, busy roads ${g.getRules().busyRoads ? 'on' : 'off'}, trading ${g.getRules().trading ? 'on' : 'off'}, teams ${teams}`;
 }
 // EXT: end of the block.
 
@@ -90,7 +90,7 @@ for (let p = 1; p <= points; p++) {
   const b = load(text);
   // EXT (game options and teams): they come back from the file.
   if (ext) {
-    const want = `stock ${extRules.stockPreset}, peace ${extRules.peaceMinutes}, busy roads on, teams ${extTeams.join('')}`;
+    const want = `stock ${extRules.stockPreset}, peace ${extRules.peaceMinutes}, busy roads on, trading on, teams ${extTeams.join('')}`;
     const ok = extState(game) === want && extState(a) === want && a.isAllied(0, 1) && !a.isAllied(0, 2) &&
       a.getPeaceTicksLeft() === game.getPeaceTicksLeft();
     if (!ok) failed = true;

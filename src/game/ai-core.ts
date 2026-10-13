@@ -1480,6 +1480,10 @@ export function update(player: Player): void {
     default: return;
   }
 
+  // EXT: trading: answer the offers of other players, on every step, so
+  // that an offer is answered long before it expires.
+  if (AI_GAME().hasTrading()) Manage.answerTradeOffers(player);
+
   ai.counter = W(ai.counter + 1);
   if (ai.counter & 7) {
     scanSites(player);

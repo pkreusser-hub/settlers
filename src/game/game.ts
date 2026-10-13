@@ -63,6 +63,8 @@ import { Building, BuildingType, UpgradeRefusal, constInfo, upgradeTarget } from
 import { Serf, SerfState, SerfType } from './serf';
 import { Inventory, InventoryMode } from './inventory';
 import type { SaveReaderText, SaveWriterText } from './savegame';
+// EXT: trading between players.
+import { Trade } from './trade';
 
 export const DEFAULT_GAME_SPEED = 2;
 
@@ -96,6 +98,8 @@ export interface GameRules {
   peaceMinutes: number; /* One of PEACE_MINUTES_CHOICES. */
   // EXT: extra carriers on busy roads, see Flag.extUpdateLoad().
   busyRoads: boolean;
+  // EXT: trading between players, see trade.ts.
+  trading: boolean;
 }
 
 export function isValidTeam(v: unknown): v is number {
@@ -109,7 +113,8 @@ export function isValidGameRules(v: unknown): v is GameRules {
           rules.stockPreset === STOCK_RICH) &&
          typeof rules.peaceMinutes === 'number' &&
          PEACE_MINUTES_CHOICES.includes(rules.peaceMinutes) &&
-         typeof rules.busyRoads === 'boolean';
+         typeof rules.busyRoads === 'boolean' &&
+         typeof rules.trading === 'boolean';
 }
 
 const GROUND_ANALYSIS_RADIUS = 25;
@@ -271,6 +276,10 @@ export class Game {
   protected peaceMinutes = 0;
   // EXT: extra carriers on busy roads. Saved as "busy_roads" when on.
   protected busyRoads = false;
+  // EXT: trading between players. Saved as "trading" when on; the offers
+  // and the shipments under way are in `trade` (trade.ts).
+  protected trading = false;
+  readonly trade: Trade = new Trade(this);
 
   /* Work fields of the computer players. */
   protected aiGame: GameAIFields;
@@ -410,7 +419,12 @@ export class Game {
 
   getRules(): GameRules {
     return { stockPreset: this.stockPreset, peaceMinutes: this.peaceMinutes,
-             busyRoads: this.busyRoads };
+             busyRoads: this.busyRoads, trading: this.trading };
+  }
+
+  /* EXT: whether players may trade goods (GameRules.trading). */
+  hasTrading(): boolean {
+    return this.trading;
   }
 
   /* EXT: whether a busy road may call one carrier more than its length
@@ -426,6 +440,7 @@ export class Game {
     this.stockPreset = rules.stockPreset;
     this.peaceMinutes = rules.peaceMinutes;
     this.busyRoads = rules.busyRoads;
+    this.trading = rules.trading;
   }
 
   /* Ticks until attacks are allowed, 0 when they are. */
@@ -1255,6 +1270,8 @@ export class Game {
     this.updateBuildings();
     this.updateSerfs();
     this.updateGameStats();
+    // EXT: trading: offers expire and shipments arrive.
+    if (this.trading) this.trade.update(this.tickDiff);
   }
 
   // PORT: not in the C++. Sets the speed directly (DEFAULT_GAME_SPEED is
@@ -3337,8 +3354,14 @@ export class Game {
         // EXT: busy roads; written only when on.
         busyRoads: gameReader.hasValue('busy_roads') &&
                    gameReader.value('busy_roads').readInt() !== 0,
+        // EXT: trading; written only when on.
+        trading: gameReader.hasValue('trading') &&
+                 gameReader.value('trading').readInt() !== 0,
       });
     }
+    // EXT: the offers and shipments of the trade; a save without them has
+    // none.
+    this.trade.loadText(gameReader, reader);
 
     // PORT: the C++ struct is uninitialised here; every field is read below.
     const updateState = new GameMap.UpdateState();
@@ -3494,6 +3517,8 @@ export class Game {
     writer.value('peace_minutes').write(this.peaceMinutes);
     // EXT: busy roads, only when on.
     if (this.busyRoads) writer.value('busy_roads').write(1);
+    // EXT: trading, only when on.
+    if (this.trading) writer.value('trading').write(1);
     writer.value('map.gold_morale_factor').write(this.mapGoldMoraleFactor);
     writer.value('player_score_leader').write(
       ((this.landLeader >= 0 ? BIT(this.landLeader) : 0) |
@@ -3541,6 +3566,9 @@ export class Game {
       const serfWriter = writer.addSection('serf', serf.getIndex());
       serf.saveText(serfWriter);
     }
+
+    // EXT: the offers and shipments of the trade, when there are any.
+    if (this.trading) this.trade.saveText(writer, writer);
 
     this.map.saveText(writer);
   }

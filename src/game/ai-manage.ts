@@ -858,3 +858,72 @@ export function attack(player: Player): void {
     return;
   }
 }
+
+// ---------------------------------------------------------------------------
+// EXT: trading between players (trade.ts). Not part of the original: how a
+// computer player answers the offers made to it. It never makes one.
+
+/* What a computer player keeps of a resource it is asked for: it gives
+   only what it holds above this, and above what it gives. */
+export const AI_TRADE_KEEP = 10;
+/* The same for building materials (lumber, planks, stone). */
+export const AI_TRADE_KEEP_MATERIAL = 30;
+
+/* Whether the computer player gives wantCount of the resource want for
+   giveCount of another, from the stock that holds `have` of it:
+   - never a weapon (sword, shield) or a tool (shovel to pincer);
+   - not more than twice what it gets;
+   - only from a clear surplus: after the trade the stock still holds at
+     least what was given plus AI_TRADE_KEEP (AI_TRADE_KEEP_MATERIAL of
+     lumber, planks and stone). */
+export function tradeSwapAccepted(want: ResourceType, wantCount: number,
+                                  giveCount: number, have: number): boolean {
+  if (want >= ResourceType.TypeShovel && want <= ResourceType.TypeShield) return false;
+  if (wantCount > 2 * giveCount) return false;
+  const material = want === ResourceType.TypeLumber || want === ResourceType.TypePlank ||
+                   want === ResourceType.TypeStone;
+  const keep = material ? AI_TRADE_KEEP_MATERIAL : AI_TRADE_KEEP;
+  return have >= 2 * wantCount + keep;
+}
+
+/* Answer the offers made to the computer player: a gift is taken, a swap
+   by tradeSwapAccepted(), with the stock that holds the most of what is
+   asked (the first of them). Draws no random number. */
+export function answerTradeOffers(player: Player): void {
+  const game = AI_GAME();
+  const trade = game.trade;
+  if (trade.offers.length === 0) return;
+
+  for (const offer of trade.offers.slice()) {
+    if (offer.to !== PLAYER_NUM(player)) continue;
+
+    if (offer.wantCount === 0) {
+      /* A gift goes to the castle, or to the first storehouse. An offer
+         that can not be accepted now stays until it expires. */
+      const stock = trade.findStock(PLAYER_NUM(player), 0);
+      if (stock === null) continue;
+      const building = game.getBuilding(stock.getBuildingIndex());
+      if (building !== null) trade.acceptOffer(player, offer.id, building.getPosition());
+      continue;
+    }
+
+    let best: Building | null = null;
+    let have = 0;
+    for (const inventory of game.getPlayerInventories(player)) {
+      if (trade.getStock(PLAYER_NUM(player), inventory.getIndex()) === null) continue;
+      const count = inventory.getCountOf(offer.want);
+      if (best === null || count > have) {
+        best = game.getBuilding(inventory.getBuildingIndex());
+        have = count;
+      }
+    }
+    if (best !== null &&
+        tradeSwapAccepted(offer.want, offer.wantCount, offer.giveCount, have) &&
+        trade.acceptOffer(player, offer.id, best.getPosition())) {
+      continue;
+    }
+    trade.declineOffer(player, offer.id);
+  }
+}
+
+// EXT: end of the trade block.

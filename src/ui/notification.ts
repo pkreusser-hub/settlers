@@ -116,6 +116,24 @@ export function notificationViews(): NotificationBoxNotificationView[] {
         decoration: NOTIFICATION_SHOW_BUILDING,
         icon: 0,
         text: N_('The upgrade\nof this building\nis done') },
+      // EXT: trading between players. The message window of the page says
+      // who and what (menu/messages.ts); this box can only show a text.
+      { type: MessageType.TypeTradeOffer,
+        decoration: NOTIFICATION_SHOW_MAP_OBJECT,
+        icon: mapBuildingSprite[BuildingType.TypeStock],
+        text: N_('Another player\noffers you\ngoods') },
+      { type: MessageType.TypeTradeAccepted,
+        decoration: NOTIFICATION_SHOW_MAP_OBJECT,
+        icon: mapBuildingSprite[BuildingType.TypeStock],
+        text: N_('Your trade\noffer was\naccepted') },
+      { type: MessageType.TypeTradeDeclined,
+        decoration: NOTIFICATION_SHOW_MAP_OBJECT,
+        icon: mapBuildingSprite[BuildingType.TypeStock],
+        text: N_('Your trade\noffer ended\nwithout a trade') },
+      { type: MessageType.TypeTradeArrived,
+        decoration: NOTIFICATION_SHOW_MAP_OBJECT,
+        icon: mapBuildingSprite[BuildingType.TypeStock],
+        text: N_('Traded goods\nhave arrived\nhere') },
       { type: MessageType.TypeNone, decoration: 0, icon: 0, text: null },
     ];
   }

@@ -768,7 +768,9 @@ export class Interface extends GuiObject implements GameManagerHandler {
       this.layout();
     }
 
-    if (BIT_TEST(0x18f3fe, message.type)) {
+    // EXT: bits 20 (TypeUpgradeDone) and 24 (TypeTradeArrived) are not in
+    // the C++.
+    if (BIT_TEST(0x118f3fe, message.type)) {
       /* Move screen to new position */
       this.viewport!.moveToMapPos(message.pos);
       this.updateMapCursorPos(message.pos);

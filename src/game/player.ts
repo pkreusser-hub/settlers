@@ -64,6 +64,18 @@ export enum MessageType {
   // EXT: an upgrade in place is done; data as TypeKnightOccupied (1 tower,
   // 2 fortress).
   TypeUpgradeDone = 20,
+  // EXT: trading between players (trade.ts). The data of all four is packed
+  // by packTradeData(): the other player, the goods and a code.
+  /* Another player offers goods. */
+  TypeTradeOffer = 21,
+  /* The other player accepted the offer of this player. */
+  TypeTradeAccepted = 22,
+  /* The offer of this player ended without a trade; the code is
+     TRADE_END_DECLINED, _EXPIRED or _VOID. */
+  TypeTradeDeclined = 23,
+  /* Goods arrived in the stock at pos; code 1: they came back because the
+     other player has no stock. */
+  TypeTradeArrived = 24,
 }
 
 export class Message {

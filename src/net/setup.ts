@@ -117,6 +117,8 @@ export class NetGameInfo extends GameInfo {
       peaceMinutes: setup.rules.peaceMinutes,
       // EXT: busy roads.
       busyRoads: setup.rules.busyRoads,
+      // EXT: trading between players.
+      trading: setup.rules.trading,
     };
   }
 

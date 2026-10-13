@@ -25,6 +25,8 @@ import type { Direction, MapPos } from '../game/map';
 import type { Player } from '../game/player';
 import { ResourceType } from '../game/resource';
 import { SerfState, SerfType } from '../game/serf';
+// EXT: for the trade block at the end of this file.
+import { TradeRefusal } from '../game/trade';
 import { issue, registerCommand } from './command';
 import type { Command } from './command';
 
@@ -856,4 +858,79 @@ export function cmdUpgradeBuilding(game: Game, pos: MapPos): void {
 }
 
 // EXT: end of the building controls block.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// EXT: trading between players (not part of Freeserf; game/trade.ts has the
+// rule). This block is all of it in this file. Every command does nothing
+// in a game without the option.
+
+/* Why the player may not offer the goods from his castle or storehouse at
+   pos, or TradeRefusal.None (Trade.offerRefusal). */
+export function tradeOfferRefusal(game: Game, player: Player, pos: MapPos, to: number,
+                                  give: ResourceType, giveCount: number,
+                                  want: ResourceType, wantCount: number): TradeRefusal {
+  if (!isPos(game, pos)) return TradeRefusal.Stock;
+  return game.trade.offerRefusal(player, pos, to, give, giveCount, want, wantCount);
+}
+
+/* Why the player may not accept the offer with his castle or storehouse at
+   pos, or TradeRefusal.None (Trade.acceptRefusal). */
+export function tradeAcceptRefusal(game: Game, player: Player, id: number,
+                                   pos: MapPos): TradeRefusal {
+  if (!isPos(game, pos)) return TradeRefusal.Stock;
+  return game.trade.acceptRefusal(player, id, pos);
+}
+
+/* tradeOffer { pos, to, give, giveCount, want, wantCount }: offer giveCount
+   of the resource give from the player's castle or storehouse at pos to the
+   player `to`, for wantCount of the resource want. A gift has want -1 and
+   wantCount 0. */
+register('tradeOffer', (game, player, cmd) => {
+  if (!isPos(game, cmd.pos)) return;
+  if (!isInt(cmd.to, 0, 3) || !isInt(cmd.give, 0, 25) || !isInt(cmd.giveCount, 1, 0xffff) ||
+      !isInt(cmd.want, -1, 25) || !isInt(cmd.wantCount, 0, 0xffff)) {
+    return;
+  }
+  game.trade.makeOffer(player, cmd.pos, cmd.to, cmd.give, cmd.giveCount, cmd.want, cmd.wantCount);
+});
+
+export function cmdTradeOffer(game: Game, pos: MapPos, to: number, give: ResourceType,
+                              giveCount: number, want: ResourceType, wantCount: number): void {
+  issue(game, { type: 'tradeOffer', pos, to, give, giveCount, want, wantCount });
+}
+
+/* tradeAccept { id, pos }: accept the offer id that another player made to
+   this one. What he wants leaves the player's castle or storehouse at pos,
+   and what he gives arrives there. */
+register('tradeAccept', (game, player, cmd) => {
+  if (!isPos(game, cmd.pos) || !isInt(cmd.id, 1, 0x7fffffff)) return;
+  game.trade.acceptOffer(player, cmd.id, cmd.pos);
+});
+
+export function cmdTradeAccept(game: Game, id: number, pos: MapPos): void {
+  issue(game, { type: 'tradeAccept', id, pos });
+}
+
+/* tradeDecline { id }: say no to the offer id that was made to the player. */
+register('tradeDecline', (game, player, cmd) => {
+  if (!isInt(cmd.id, 1, 0x7fffffff)) return;
+  game.trade.declineOffer(player, cmd.id);
+});
+
+export function cmdTradeDecline(game: Game, id: number): void {
+  issue(game, { type: 'tradeDecline', id });
+}
+
+/* tradeCancel { id }: take back the offer id that the player made. */
+register('tradeCancel', (game, player, cmd) => {
+  if (!isInt(cmd.id, 1, 0x7fffffff)) return;
+  game.trade.cancelOffer(player, cmd.id);
+});
+
+export function cmdTradeCancel(game: Game, id: number): void {
+  issue(game, { type: 'tradeCancel', id });
+}
+
+// EXT: end of the trade block.
 // ---------------------------------------------------------------------------

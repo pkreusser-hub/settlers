@@ -532,6 +532,26 @@ function chooseCommand(side: Side, rnd: () => number): Command | null {
   }
   if (castle < 0) return null;
 
+  // EXT (trading): trade commands, only in a game with the rule (test 17),
+  // so that every other test draws the same numbers as before.
+  if (game.hasTrading() && rnd() < 0.3) {
+    const toMe = game.trade.offers.filter((o) => o.to === side.index);
+    const mine = game.trade.offers.filter((o) => o.from === side.index);
+    const k = rnd();
+    if (k < 0.45) {
+      const swap = rnd() < 0.5;
+      return {
+        type: 'tradeOffer', pos: castle, to: pick(4), give: pick(26), giveCount: 1 + pick(4),
+        want: swap ? pick(26) : -1, wantCount: swap ? 1 + pick(3) : 0,
+      };
+    }
+    if (k < 0.75 && toMe.length > 0) return { type: 'tradeAccept', id: toMe[pick(toMe.length)].id, pos: castle };
+    if (k < 0.85 && toMe.length > 0) return { type: 'tradeDecline', id: toMe[pick(toMe.length)].id };
+    if (k < 0.92 && mine.length > 0) return { type: 'tradeCancel', id: mine[pick(mine.length)].id };
+    /* Not valid: ignored. */
+    return { type: 'tradeAccept', id: 1 + pick(50), pos: pick(cells) };
+  }
+
   const r = rnd();
   if (r < 0.03) return { type: 'speedIncrease' };
   if (r < 0.06) return { type: 'speedDecrease' };
@@ -1092,9 +1112,9 @@ function main(): void {
   {
     const setup = makeTestSetup(2, 4, '8667715887436237', '3183215728814883');
     check(setup.rules.stockPreset === 0 && setup.rules.peaceMinutes === 0 && setup.rules.busyRoads === false &&
-      setup.players.every((p) => p.team === 0),
+      setup.rules.trading === false && setup.players.every((p) => p.team === 0),
       'a setup made without options has the defaults and no teams');
-    setup.rules = { stockPreset: 1, peaceMinutes: 10, busyRoads: true };
+    setup.rules = { stockPreset: 1, peaceMinutes: 10, busyRoads: true, trading: true };
     [1, 2, 1, 2].forEach((team, i) => { setup.players[i].team = team; });
     const wire = JSON.parse(JSON.stringify(setup)) as GameSetup;
     check(isValidSetup(wire), 'the setup with options and teams is valid after JSON');
@@ -1111,6 +1131,8 @@ function main(): void {
       bad((c) => { c.rules.peaceMinutes = -10; }) &&
       bad((c) => { (c.rules as unknown as { busyRoads: unknown }).busyRoads = 1; }) &&
       bad((c) => { delete (c.rules as unknown as { busyRoads?: boolean }).busyRoads; }) &&
+      bad((c) => { (c.rules as unknown as { trading: unknown }).trading = 1; }) &&
+      bad((c) => { delete (c.rules as unknown as { trading?: boolean }).trading; }) &&
       bad((c) => { (c as unknown as { rules: unknown }).rules = null; }) &&
       bad((c) => { delete (c as unknown as { rules?: unknown }).rules; }),
       'options that do not exist, or none at all, are refused');
@@ -1119,6 +1141,7 @@ function main(): void {
     const same = match.sides.every((side) => {
       const g = side.game;
       return g.getRules().stockPreset === 1 && g.getRules().peaceMinutes === 10 && g.getRules().busyRoads &&
+        g.getRules().trading &&
         [1, 2, 1, 2].every((team, i) => g.getPlayer(i)!.getTeam() === team) &&
         g.isAllied(0, 2) && g.isAllied(1, 3) && !g.isAllied(0, 1);
     });
@@ -1131,6 +1154,14 @@ function main(): void {
     check(allRunning(match.sides) && noneSaw(match.sides, 'desync'), 'running without desync');
     check(match.sides.every((side) => side.game.isPeace()), 'the peace timer runs in both games');
     compare(match);
+    // EXT (trading): the players traded (chooseCommand). The offers and
+    // shipments are in the state hash that compare() checked above.
+    {
+      const made = match.host.game.trade.nextId - 1;
+      print(`    trade: ${made} offers made, ${match.host.game.trade.offers.length} open, ` +
+        `${match.host.game.trade.shipments.length} shipments under way on the host`);
+      check(made > 0, 'trade offers were made in the game');
+    }
     for (const side of match.sides) side.session.stop();
   }
 

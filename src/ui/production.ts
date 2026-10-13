@@ -280,6 +280,7 @@ export function resourceIcons(res: ResourceType): ResourceType[] {
 /* One unit of a resource, for "1 sword" beside "swords". */
 const singularNames: { [res: number]: string } = {
   [R.TypePig]: 'pig',
+  [R.TypePlank]: 'plank',
   [R.TypeBoat]: 'boat',
   [R.TypeGoldBar]: 'gold bar',
   [R.TypeSword]: 'sword',

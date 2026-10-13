@@ -167,6 +167,11 @@ export function stateHash(game: Game): number {
     }
     // EXT: busy roads, only when on.
     if (rules.busyRoads) mix(0x45585432); /* 'EXT2' */
+    // EXT: trading, only when on: the offers and the shipments under way.
+    if (rules.trading) {
+      mix(0x45585434); /* 'EXT4' */
+      game.trade.mixInto(mix);
+    }
   }
   // EXT: end of the block.
 

@@ -13,6 +13,8 @@ import type { Menus } from './kit';
 import { registerSettingsBoxes } from './settings';
 import { registerStartBoxes } from './start';
 import { registerStatBoxes } from './stats';
+// EXT: the trade window.
+import { registerTradeBoxes } from './trade';
 
 let registered = false;
 
@@ -25,6 +27,7 @@ export function initMenus(iface: Interface, gameManager: GameManager): Menus {
     registerSettingsBoxes();
     registerBuildingBoxes();
     registerStartBoxes();
+    registerTradeBoxes();
   }
   return installMenus(iface, gameManager);
 }

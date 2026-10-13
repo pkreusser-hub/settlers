@@ -24,7 +24,7 @@ import type { Pin } from './building-parts';
 import { knightsByRank, knightTiles } from './building-info';
 import type { BoxContext, BoxView, Widget } from './kit';
 import { resourceBoxOrder, resourceLabel, serfBoxOrder, serfName } from './names';
-import { hint, numberGrid, resourceIcon, section, segmented, serfIcon } from './widgets';
+import { button, hint, numberGrid, resourceIcon, section, segmented, serfIcon } from './widgets';
 
 const pages: { box: PopupBoxType; label: string; title: string }[] = [
   { box: PopupBoxType.TypeCastleRes, label: 'Goods', title: 'The goods stored here' },
@@ -43,9 +43,30 @@ function modeNumber(mode: InventoryMode): number {
 
 const modeWords = ['in', 'stop', 'out'];
 
+/* EXT: the page of the trade window (trade.ts), in a game with trading. */
+const tradePage = {
+  box: PopupBoxType.TypeTrade,
+  label: 'Trade',
+  title: 'Offer goods of this store to another player, and answer offers',
+};
+
+/* The tabs of the window: its three pages, and the trade window in a game
+   with trading (the trade window shows the same tabs). */
+export function setInventoryTabs(ctx: BoxContext): void {
+  const all = ctx.game.getRules().trading ? [...pages, tradePage] : pages;
+  ctx.win.setTabs(
+    all.map((page) => ({ label: page.label, box: page.box, title: page.title })),
+    Math.max(0, all.findIndex((page) => page.box === ctx.box)),
+    (other) => {
+      ctx.sound(AudioTypeSfx.TypeSfxClick);
+      ctx.open(other);
+    },
+  );
+}
+
 /* The castle or storehouse of the box, where the three boxes of popup.ts
    stay open. */
-function inventoryBuilding(ctx: BoxContext, pin: Pin): Building | null {
+export function inventoryBuilding(ctx: BoxContext, pin: Pin): Building | null {
   const building = boxBuilding(ctx, pin);
   if (building === null) return null;
   const type = building.getType();
@@ -60,6 +81,13 @@ function inventoryBuilding(ctx: BoxContext, pin: Pin): Building | null {
 export function inventoryActions(ctx: BoxContext, building: () => Building | null): (Widget | HTMLElement)[] {
   const b = building();
   const items: (Widget | HTMLElement)[] = [];
+  // EXT: trading, only in a game with the rule.
+  if (b !== null && ctx.game.getRules().trading) {
+    items.push(button('Trade', () => {
+      ctx.sound(AudioTypeSfx.TypeSfxClick);
+      ctx.open(PopupBoxType.TypeTrade);
+    }, { title: 'Offer goods of this store to another player, and answer offers' }));
+  }
   if (b !== null && canDemolish(b)) items.push(demolishControl(ctx, building));
   return items;
 }
@@ -74,14 +102,7 @@ function inventoryBox(ctx: BoxContext): BoxView {
   const inv = (): Inventory | null => cur?.getInventory() ?? null;
 
   win.setTitle(cur === null ? 'Storehouse' : buildingName(cur.getType()));
-  win.setTabs(
-    pages.map((page) => ({ label: page.label, box: page.box, title: page.title })),
-    Math.max(0, pages.findIndex((page) => page.box === box)),
-    (other) => {
-      ctx.sound(AudioTypeSfx.TypeSfxClick);
-      ctx.open(other);
-    },
-  );
+  setInventoryTabs(ctx);
 
   win.add(
     buildingHeader(ctx, b, () => {

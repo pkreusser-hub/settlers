@@ -17,6 +17,9 @@ import type { Game } from '../../game/game';
 import type { MapPos } from '../../game/map';
 import { BIT_TEST } from '../../game/misc';
 import { Message, MessageType } from '../../game/player';
+import type { ResourceType } from '../../game/resource';
+// EXT: the trade messages.
+import { TRADE_END_EXPIRED, TRADE_END_VOID, unpackTradeData } from '../../game/trade';
 import type { Interface } from '../interface';
 import { mapBuildingSprite } from '../interface';
 import {
@@ -28,7 +31,7 @@ import {
   NOTIFICATION_SHOW_OPPONENT,
   notificationViews,
 } from '../notification';
-import { buildingName } from '../production';
+import { amountName, buildingName } from '../production';
 import { MenuWindow } from './kit';
 import { characterName, playerColorName } from './start';
 import { assetCanvas, button, el, faceCanvas, iconCanvas } from './widgets';
@@ -63,12 +66,72 @@ const texts: { [type: number]: { title: string; text: string } } = {
 /* The messages with a place on the map: the ones Interface.openMessage()
    moves the map for. */
 export function messageHasPlace(type: MessageType): boolean {
-  return BIT_TEST(0x18f3fe, type) !== 0;
+  // EXT: bit 24, TypeTradeArrived, as Interface.openMessage().
+  return BIT_TEST(0x118f3fe, type) !== 0;
 }
 
 export function messageText(type: MessageType): { title: string; text: string } {
   return texts[type] ?? { title: 'Message', text: '' };
 }
+
+// EXT: trading between players. The four trade messages say who and what:
+// their data is packed by packTradeData() of game/trade.ts.
+
+function isTradeMessage(type: MessageType): boolean {
+  return type === MessageType.TypeTradeOffer || type === MessageType.TypeTradeAccepted ||
+    type === MessageType.TypeTradeDeclined || type === MessageType.TypeTradeArrived;
+}
+
+/* "5 planks", "1 sword". */
+function goods(res: number, count: number): string {
+  return amountName(res as ResourceType, String(count));
+}
+
+function tradeMessageText(message: Message): { title: string; text: string } {
+  const d = unpackTradeData(message.data);
+  const who = playerColorName(d.other);
+  const given = goods(d.res, d.count);
+  const deal = d.count2 > 0 ? `${given} for ${goods(d.res2, d.count2)}` : `${given} as a gift`;
+  switch (message.type) {
+    case MessageType.TypeTradeOffer:
+      return {
+        title: 'Trade offer',
+        text: `${who} offers you ${deal}. Answer in the Trade window of your castle or a storehouse.`,
+      };
+    case MessageType.TypeTradeAccepted:
+      return {
+        title: 'Offer accepted',
+        text: `${who} accepted your offer of ${deal}. The goods are on the way.`,
+      };
+    case MessageType.TypeTradeDeclined:
+      if (d.code === TRADE_END_EXPIRED) {
+        return { title: 'Offer expired', text: `${who} did not answer your offer of ${deal}.` };
+      }
+      if (d.code === TRADE_END_VOID) {
+        return {
+          title: 'Offer ended',
+          text: `Your offer of ${deal} to ${who} ended: a player is out of the game or the store is gone.`,
+        };
+      }
+      return { title: 'Offer declined', text: `${who} declined your offer of ${deal}.` };
+    default:
+      if (d.code === 1) {
+        return {
+          title: 'Goods came back',
+          text: `${given} came back here: ${who} has no store to take them.`,
+        };
+      }
+      return { title: 'Goods arrived', text: `${given} from ${who} arrived here.` };
+  }
+}
+
+/* The title and the text of a message: of its type, or for a trade message
+   of what it carries. */
+function messageWords(message: Message): { title: string; text: string } {
+  return isTradeMessage(message.type) ? tradeMessageText(message) : messageText(message.type);
+}
+
+// EXT: end of the block.
 
 /* The pictures of the menus a message can call to
    (NotificationBox.drawNotification). */
@@ -80,6 +143,17 @@ function messagePicture(iface: Interface, message: Message): { picture: HTMLElem
   const game = iface.getGame();
   if (view === undefined || !game) return { picture: null, caption: '' };
   const own = iface.getPlayer()?.getColor();
+
+  // EXT: a trade message shows the other player.
+  if (isTradeMessage(message.type)) {
+    const index = unpackTradeData(message.data).other;
+    const other = game.getPlayer(index);
+    if (other === null) return { picture: null, caption: '' };
+    return {
+      picture: faceCanvas(other.getFace(), other.getColor()),
+      caption: `${playerColorName(index)}, ${characterName(other.getFace())}`,
+    };
+  }
 
   switch (view.decoration) {
     case NOTIFICATION_SHOW_OPPONENT: {
@@ -208,7 +282,7 @@ class MessageWindow {
     const message = this.current;
     if (message === null) return;
     const iface = this.iface;
-    const words = messageText(message.type);
+    const words = messageWords(message);
 
     const old = this.win;
     const win = new MenuWindow(words.title, () => iface.closeMessage());
@@ -237,10 +311,10 @@ class MessageWindow {
       const list = el('ul', 'ms-log-list');
       for (const entry of this.log) {
         const item = el('li', 'ms-log-item');
-        item.append(el('span', 'ms-log-text', messageText(entry.type).text));
+        item.append(el('span', 'ms-log-text', messageWords(entry).text));
         if (messageHasPlace(entry.type)) {
           const go = button('Go there', () => this.goTo(entry.pos), { kind: 'quiet' });
-          go.setAttribute('aria-label', `Go there: ${messageText(entry.type).text}`);
+          go.setAttribute('aria-label', `Go there: ${messageWords(entry).text}`);
           item.append(go);
         }
         list.append(item);

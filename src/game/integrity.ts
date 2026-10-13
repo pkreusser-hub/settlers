@@ -45,6 +45,8 @@ export class IntegrityCheck {
     problems += IntegrityCheck.checkFlags(game, fix);
     problems += IntegrityCheck.checkRequests(game, fix);
     problems += IntegrityCheck.checkSerfs(game);
+    // EXT: the offers and shipments of the trade (trade.ts).
+    problems += IntegrityCheck.checkTrade(game, fix);
     if (problems !== 0) {
       Log.Warn('integrity', problems, ' problem(s) found in the game state',
                (fix ? ', repaired where possible.' : '.'));
@@ -217,6 +219,16 @@ export class IntegrityCheck {
       }
     }
 
+    return problems;
+  }
+
+  /* EXT: the offers and shipments of the trade are ones the rule could have
+     made. With fix the others are dropped. */
+  protected static checkTrade(game: Game, fix: boolean): number {
+    const problems = game.trade.countProblems(fix);
+    if (problems !== 0) {
+      Log.Warn('integrity', problems, ' trade offer(s) or shipment(s) are not valid');
+    }
     return problems;
   }
 

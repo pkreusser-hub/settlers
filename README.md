@@ -98,6 +98,21 @@ None of these change a game that does not use them.
   when the road is quiet again. The window of a flag shows the carriers of
   each road and which roads are busy. Water roads and roads of 24 steps or
   more stay as they are.
+- Trading between players: an option in the game setup, off by default. From
+  the Trade page of your castle or a storehouse you offer another player 1 to
+  100 of one kind of goods, as a gift or for 1 to 100 of another kind. Any
+  goods can be traded, weapons too; serfs and knights cannot. The other player
+  has 3 minutes of game time to accept or decline, and you can have 4 offers
+  open. Nothing is set aside while an offer is open: both stores must still
+  hold the goods when it is accepted. Then the goods leave both stores at once
+  and arrive after 10 seconds plus 1 second for each step between the two
+  stores, 2 minutes at most. No carrier walks them: roads of two players never
+  join. If the receiver has no castle or storehouse left the goods travel back,
+  and they are lost if the sender has none either. A player whose castle has
+  fallen cannot trade. Allies and enemies trade alike. A computer player takes
+  every gift, never makes an offer, and accepts a swap only if you ask for no
+  weapon or tool, for at most twice what you give, and for goods it has plenty
+  of. A message tells you about an offer, its answer and the goods that arrive.
 - Pause a building: its worker stays in but makes nothing.
 - Output cap: a building stops when the stock of what it makes reaches the
   number you set, and starts again when the stock falls.

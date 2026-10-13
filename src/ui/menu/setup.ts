@@ -70,6 +70,8 @@ export interface GameOptions {
   peaceMinutes: number;
   /* EXT: extra carriers on busy roads. */
   busyRoads: boolean;
+  /* EXT: trading between players. */
+  trading: boolean;
 }
 
 const MAP_SIZE_MIN = 3;
@@ -91,6 +93,7 @@ export class SetupModel {
     stockPreset: STOCK_NORMAL,
     peaceMinutes: 0,
     busyRoads: false,
+    trading: false,
   };
 
   constructor(readonly online: OnlineHostHooks | null) {
@@ -553,6 +556,19 @@ function gameOptionsSection(model: SetupModel): Widget {
   const busyRoadsText = hint(
     'A road where goods keep piling up gets one more carrier than its length allows.');
 
+  /* EXT: Trade of game/trade.ts. */
+  const trading = toggle({
+    label: 'Trading between players',
+    get: () => options.trading,
+    set: (on) => {
+      options.trading = on;
+      update();
+    },
+  });
+  const tradingText = hint(
+    'Players offer each other goods from a castle or storehouse, as a gift or a swap. ' +
+    'The goods travel for a while.');
+
   /* Game.updateTeamWinner() and Game.updateWinner(). */
   const teamText = hint('');
   const problem = el('p', 'su-team-problem');
@@ -565,6 +581,7 @@ function gameOptionsSection(model: SetupModel): Widget {
     stock.update?.();
     peace.update?.();
     busyRoads.update?.();
+    trading.update?.();
     const [none, a, b] = model.teams();
     const key = `${options.stockPreset}|${options.peaceMinutes}|${none}|${a}|${b}`;
     if (key === shown) return;
@@ -593,6 +610,7 @@ function gameOptionsSection(model: SetupModel): Widget {
 
   const root = section('Game options', stock, stockText, peace, peaceText,
     busyRoads, busyRoadsText,
+    trading, tradingText,
     el('div', 'mk-label su-team-title', 'Teams'), teamText, problem);
   return { el: root.el, update };
 }

@@ -1,0 +1,95 @@
+/* The trade window (trade.ts). Colours are the variables of theme.css,
+   sizes are in em. Not part of Freeserf. */
+
+/* ---- A new offer ---- */
+
+.tr-make .mk-segmented + .mk-segmented,
+.tr-make .mk-row + .mk-segmented {
+  margin-top: 0.5em;
+}
+
+.tr-offer-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4em 0.8em;
+  margin: 0.6em 0 0.3em;
+  padding: 0.4em 0.6em;
+  background: var(--gx-bg-deep);
+  border: 1px solid var(--gx-line-soft);
+  border-radius: var(--gx-radius-s);
+}
+
+.tr-status {
+  flex: 1 1 14em;
+  margin: 0;
+  color: var(--gx-text);
+}
+
+/* A problem is said in words; the colour only repeats it. */
+.tr-status.tr-problem {
+  color: var(--gx-warn);
+}
+
+/* ---- The lists: offers and goods on the way ---- */
+
+.tr-part:empty {
+  display: none;
+}
+
+.tr-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tr-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3em 0.7em;
+  min-height: 2.2em;
+  padding: 0.25em 0;
+}
+
+.tr-item + .tr-item {
+  border-top: 1px solid var(--gx-line-soft);
+}
+
+.tr-pic,
+.tr-goods {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 2.4em;
+}
+
+.tr-pic canvas {
+  height: 2.2em !important;
+  width: auto !important;
+}
+
+.tr-text {
+  flex: 1 1 12em;
+  min-width: 0;
+  color: var(--gx-text);
+}
+
+.tr-buttons {
+  display: flex;
+  flex: none;
+  gap: 0.4em;
+}
+
+.tr-empty {
+  margin: 0.1em 0;
+  color: var(--gx-text-dim);
+}
+
+/* The face of a player in the "To" buttons, in the height of two lines. */
+.tr-make .mk-seg:not(.mk-seg-icon) canvas {
+  height: 2.2em !important;
+  width: auto !important;
+  margin: 0.2em 0;
+}

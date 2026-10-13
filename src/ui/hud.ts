@@ -1,12 +1,15 @@
-// Page controls over the game: game speed, pause, and the size of the map
-// and of the panel. Not part of Freeserf.
+// Page controls over the game: game speed, pause, save and load, and the
+// size of the map and of the panel. Not part of Freeserf.
 
 import './hud.css';
 
 import { DEFAULT_GAME_SPEED } from '../game/game';
 import type { GameManager } from '../game/game-manager';
+import { GameStore } from '../game/savegame';
+import { hasCommandSink } from '../net/command';
 import { cmdSetPaused, cmdSetSpeed } from '../net/commands';
 import { EventLoop, EventLoopDOM } from './event-loop';
+import type { Interface } from './interface';
 
 const SPEEDS = [1, 2, 4];
 
@@ -14,8 +17,11 @@ export class Hud {
   protected root: HTMLElement;
   protected speedButtons: HTMLButtonElement[] = [];
   protected pauseButton: HTMLButtonElement;
+  protected saveButton: HTMLButtonElement;
+  protected loadButton: HTMLButtonElement;
+  protected savedUntil = 0;
 
-  constructor(protected gameManager: GameManager) {
+  constructor(protected gameManager: GameManager, protected iface: Interface) {
     this.root = document.createElement('div');
     this.root.id = 'hud';
 
@@ -34,6 +40,14 @@ export class Hud {
     });
     speed.append(this.pauseButton);
 
+    const file = this.group('Game');
+    this.saveButton = this.button('Save', 'Save the game in this browser, under the date and time', () => {
+      const game = this.gameManager.getCurrentGame();
+      if (game && this.save()) this.savedUntil = Date.now() + 1500;
+    });
+    this.loadButton = this.button('Load', 'Go on from a saved game', () => this.iface.openGameLoad());
+    file.append(this.saveButton, this.loadButton);
+
     const map = this.group('Map');
     map.append(
       this.button('−', 'Zoom the map out', () => this.loop()?.stepMapScale(-1)),
@@ -49,6 +63,18 @@ export class Hud {
     document.body.append(this.root);
     window.setInterval(() => this.refresh(), 200);
     this.refresh();
+  }
+
+  /* Save under a name like "2026-10-12 14.03.22". */
+  protected save(): boolean {
+    const game = this.gameManager.getCurrentGame();
+    if (!game) return false;
+    const d = new Date();
+    const p2 = (n: number): string => (n < 10 ? '0' : '') + n;
+    const name = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ` +
+                 `${p2(d.getHours())}.${p2(d.getMinutes())}.${p2(d.getSeconds())}`;
+    const store = GameStore.getInstance();
+    return store.save(`${store.getFolderPath()}/${name}.save`, game);
   }
 
   protected loop(): EventLoopDOM | null {
@@ -91,5 +117,8 @@ export class Hud {
     const paused = game ? game.isPaused() : false;
     this.pauseButton.setAttribute('aria-pressed', String(paused));
     this.pauseButton.textContent = paused ? 'Paused' : 'Pause';
+    this.saveButton.textContent = Date.now() < this.savedUntil ? 'Saved' : 'Save';
+    /* An online game goes on from a save through "Host online game". */
+    this.loadButton.disabled = hasCommandSink();
   }
 }

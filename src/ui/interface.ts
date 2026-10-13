@@ -32,6 +32,7 @@ import { MessageType } from '../game/player';
 import type { Player } from '../game/player';
 import { Random } from '../game/random';
 import { ResourceType } from '../game/resource';
+import { GameStore } from '../game/savegame';
 import { getLocalPlayer, hasCommandSink, setLocalPlayer, tickGame } from '../net/command';
 import {
   addCommandListener,
@@ -477,6 +478,12 @@ export class Interface extends GuiObject implements GameManagerHandler {
     }
     this.viewport!.setEnabled(false);
     this.layout();
+  }
+
+  // PORT: not in the C++. The game init box with the saved games.
+  openGameLoad(): void {
+    this.openGameInit();
+    this.initBox!.showLoad();
   }
 
   /* Settings kept between the runs (Settings): the options of the options
@@ -1437,8 +1444,8 @@ export class Interface extends GuiObject implements GameManagerHandler {
     }
     this.autosaveLastGameTick = this.game!.getTick();
 
-    // TODO(savegame): GameStore::get_instance().save(folder +
-    // "/autosave.save", game)
+    const store = GameStore.getInstance();
+    store.save(store.getFolderPath() + '/autosave.save', this.game!);
   }
 
   /* Count the drawn frames and show the rate of the last second in the top
@@ -1661,8 +1668,7 @@ export class Interface extends GuiObject implements GameManagerHandler {
       }
       case 0x7a: // 'z'
         if (modifier & 1) {
-          // TODO(savegame): GameStore::get_instance().quick_save("quicksave",
-          // game)
+          GameStore.getInstance().quickSave('quicksave', this.game!);
         }
         break;
       case 0x6e: // 'n'

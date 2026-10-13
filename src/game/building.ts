@@ -31,6 +31,7 @@ import type { Serf } from './serf';
 import { MessageType } from './player';
 import type { Game } from './game';
 import type { Inventory } from './inventory';
+import type { SaveReaderText, SaveWriterText } from './savegame';
 
 export enum BuildingType {
   TypeNone = 0,
@@ -975,7 +976,137 @@ export class Building extends GameObject {
     }
   }
 
-  // TODO(savegame)
+  // PORT: operator>> (SaveReaderBinary) is not ported (the binary reader
+  // SaveReaderBinary is not ported).
+
+  // PORT: operator>> (SaveReaderText &reader, Building &building).
+  loadText(reader: SaveReaderText): void {
+    let x = 0;
+    let y = 0;
+    x = reader.value('pos').at(0).readUint();
+    y = reader.value('pos').at(1).readUint();
+    this.pos = this.game.getMap().pos(x, y);
+    this.type = reader.value('type').readInt();
+    try {
+      this.owner = reader.value('owner').readUint();
+      let temp: number;
+      temp = reader.value('constructing').readInt();
+      this.constructing = temp !== 0;
+    } catch {
+      let n: number;
+      n = reader.value('bld').readUint();
+      this.owner = n & 3;
+      this.constructing = (n & 0x80) !== 0;
+    }
+    try {
+      this.threatLevel = reader.value('military_state').readUint();
+      let temp: number;
+      temp = reader.value('serf_request_failed').readInt();
+      this.serfRequestFailed = temp !== 0;
+      temp = reader.value('playing_sfx').readInt();
+      this.playingSfx = temp !== 0;
+      temp = reader.value('active').readInt();
+      this.active = temp !== 0;
+      temp = reader.value('burning').readInt();
+      this.burning = temp !== 0;
+      /* Older saves did not keep it: the fire ends at once. */
+      if (reader.hasValue('burning_counter')) {
+        this.burningCounter = reader.value('burning_counter').readInt();
+      }
+      temp = reader.value('holder').readInt();
+      this.holder = temp !== 0;
+      temp = reader.value('serf_requested').readInt();
+      this.serfRequested = temp !== 0;
+    } catch {
+      let n: number;
+      n = reader.value('serf').readUint();
+      this.threatLevel = n & 3;
+      this.serfRequestFailed = (n & 4) !== 0;
+      this.playingSfx = (n & 8) !== 0;
+      this.active = (n & 16) !== 0;
+      this.burning = (n & 32) !== 0;
+      this.holder = (n & 64) !== 0;
+      this.serfRequested = (n & 128) !== 0;
+    }
+    this.flag = reader.value('flag').readUint();
+
+    this.stock[0].type = reader.value('stock[0].type').readInt();
+    this.stock[0].prio = reader.value('stock[0].prio').readInt();
+    this.stock[0].available = reader.value('stock[0].available').readInt();
+    this.stock[0].requested = reader.value('stock[0].requested').readInt();
+    this.stock[0].maximum = reader.value('stock[0].maximum').readInt();
+
+    this.stock[1].type = reader.value('stock[1].type').readInt();
+    this.stock[1].prio = reader.value('stock[1].prio').readInt();
+    this.stock[1].available = reader.value('stock[1].available').readInt();
+    this.stock[1].requested = reader.value('stock[1].requested').readInt();
+    this.stock[1].maximum = reader.value('stock[1].maximum').readInt();
+
+    this.firstKnight = reader.value('serf_index').readUint();
+    this.progress = reader.value('progress').readInt();
+    this.splitAttackBit();
+    if (reader.hasValue('queued_type')) {
+      let queuedType: number;
+      queuedType = reader.value('queued_type').readUint();
+      this.queuedType = queuedType as BuildingType;
+    }
+
+    if (reader.hasValue('inventory')) {
+      let inventoryIndex: number;
+      inventoryIndex = reader.value('inventory').readUint();
+      this.inventory = this.game.createInventory(inventoryIndex);
+    } else if (this.burning) {
+      this.u.tick = reader.value('tick').readUint();
+    } else {
+      this.u.level = reader.value('level').readUint();
+    }
+  }
+
+  // PORT: operator<< (SaveWriterText &writer, Building &building).
+  saveText(writer: SaveWriterText): void {
+    writer.value('pos').writeUint(this.game.getMap().posCol(this.pos));
+    writer.value('pos').writeUint(this.game.getMap().posRow(this.pos));
+    writer.value('type').write(this.type);
+    writer.value('owner').writeUint(this.owner);
+    writer.value('constructing').write(this.constructing);
+
+    writer.value('military_state').writeUint(this.threatLevel);
+    writer.value('playing_sfx').write(this.playingSfx);
+    writer.value('serf_request_failed').write(this.serfRequestFailed);
+    writer.value('serf_requested').write(this.serfRequested);
+    writer.value('burning').write(this.burning);
+    writer.value('burning_counter').write(this.burningCounter);
+    writer.value('active').write(this.active);
+    writer.value('holder').write(this.holder);
+
+    writer.value('flag').writeUint(this.flag);
+
+    writer.value('stock[0].type').write(this.stock[0].type);
+    writer.value('stock[0].prio').write(this.stock[0].prio);
+    writer.value('stock[0].available').write(this.stock[0].available);
+    writer.value('stock[0].requested').write(this.stock[0].requested);
+    writer.value('stock[0].maximum').write(this.stock[0].maximum);
+
+    writer.value('stock[1].type').write(this.stock[1].type);
+    writer.value('stock[1].prio').write(this.stock[1].prio);
+    writer.value('stock[1].available').write(this.stock[1].available);
+    writer.value('stock[1].requested').write(this.stock[1].requested);
+    writer.value('stock[1].maximum').write(this.stock[1].maximum);
+
+    writer.value('serf_index').writeUint(this.firstKnight);
+    writer.value('progress').write(this.progress | (this.underAttack ? BIT(0) : 0));
+    if (this.queuedType !== BuildingType.TypeNone) {
+      writer.value('queued_type').write(this.queuedType);
+    }
+
+    if (this.inventory !== null) {
+      writer.value('inventory').writeUint(this.inventory.getIndex());
+    } else if (this.isBurning()) {
+      writer.value('tick').writeUint(this.u.tick);
+    } else {
+      writer.value('level').writeUint(this.u.level);
+    }
+  }
 
   // PORT: the private overload `void update()` of the C++. TS has no
   // overloads by arity with different visibility, so it has its own name.

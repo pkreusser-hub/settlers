@@ -34,7 +34,7 @@ Integer semantics (this is where ports go wrong):
 
 Logging and errors: `Log::Info["x"] << a << b` becomes `Log.Info('x', a, b)`. `throw ExceptionFreeserf(...)` stays. `NOT_REACHED()` is in `misc.ts`.
 
-Savegame code (`operator>>`/`operator<<` on `SaveReaderBinary`, `SaveReaderText`, `SaveWriterText`) is not ported yet: leave it out and put one `// TODO(savegame)` comment where it was.
+Savegame code: the text format is ported (`src/game/savegame.ts`; each class has `loadText(reader)` and `saveText(writer)` for the C++ `operator>>`/`operator<<`). The value names are the file format. The binary reader (`SaveReaderBinary`, original DOS saves) is not ported. Saved games live in IndexedDB (`GameStore`). `tools/save-test.ts` checks the round trip; run it after touching any `loadText`/`saveText` or adding simulation state.
 
 Imports between game modules are circular. Use `import type` wherever a module only needs the type, and never run code at module top level that touches another game module's exports.
 
@@ -53,4 +53,4 @@ UI files go to `src/ui/`. The foundation (`gfx.ts`, `gui.ts`, `event-loop.ts`, `
 - `Timer::Handler` is `TimerHandler`; `EventLoop::Handler` is `EventLoopHandler`. `EventLoop.run()` returns a promise.
 - Assets are `Data.Resource.AssetIcon` (or `DataResource.AssetIcon`) from `data-instance.ts`. `Data.getInstance().getMixedSource()` is always null.
 - Sound: call `this.playSound(n)` as the C++ does; audio is not ported yet. Calls to `Audio`/`Audio::Player`/`Audio::VolumeController` go through `src/ui/audio.ts` (a no-op stand-in with the same method names until the audio port lands).
-- Savegame, config file and command line features are not ported: keep the menu entries and call sites, route them to a `// TODO(savegame)` no-op.
+- The config file and command line features are not ported: keep the menu entries and call sites, route them to a `// TODO(savegame)` no-op.

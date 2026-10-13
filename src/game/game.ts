@@ -62,6 +62,7 @@ import { Flag, FlagSearch, SerfPathInfo } from './flag';
 import { Building, BuildingType } from './building';
 import { Serf, SerfState, SerfType } from './serf';
 import { Inventory, InventoryMode } from './inventory';
+import type { SaveReaderText, SaveWriterText } from './savegame';
 
 export const DEFAULT_GAME_SPEED = 2;
 
@@ -176,7 +177,9 @@ export class Game {
   protected goldTotal: number;
 
   protected players: Collection<Player>;
-  protected flags: Collection<Flag>;
+  // PORT: `friend class IntegrityCheck` in the C++; the consistency check
+  // after loading reads flags and the three collections below.
+  flags: Collection<Flag>;
   // PORT: `friend class AI` in the C++; the computer player reads these
   // and gameSpeed, and calls demolishFlag_ and demolishBuilding_.
   inventories: Collection<Inventory>;
@@ -2957,9 +2960,311 @@ export class Game {
     }
   }
 
-  // TODO(savegame): operator>> (SaveReaderBinary, SaveReaderText),
-  // operator<< (SaveWriterText), load_serfs, load_flags, load_buildings and
-  // load_inventories.
+  // PORT: operator>> (SaveReaderBinary) and load_serfs, load_flags,
+  // load_buildings and load_inventories (the binary save games of the
+  // original) are not ported.
+
+  // operator >> (SaveReaderText &reader, Game &game)
+  loadText(reader: SaveReaderText): void {
+    /* Load essential values for calculating map positions
+     so that map positions can be loaded properly. */
+    let sections = reader.getSections('game');
+    if (sections.length === 0) {
+      throw new ExceptionFreeserf('Failed to find section "game"');
+    }
+
+    const gameReader = sections[0];
+    let size = 0;
+    try {
+      size = gameReader.value('map.size').readUint();
+    } catch (e) {
+      let colSize = 0;
+      let rowSize = 0;
+      colSize = gameReader.value('map.col_size').readUint();
+      rowSize = gameReader.value('map.row_size').readUint();
+      size = u32((colSize + rowSize) - 9);
+    }
+
+    /* Initialize remaining map dimensions. */
+    this.map = new GameMap(new MapGeometry(size));
+    for (const subreader of reader.getSections('map')) {
+      this.map.loadText(subreader);
+    }
+
+  //  std::string version;
+  //  reader.value("version") >> version;
+  //  LOGV("savegame", "Loading save game from version %s.", version.c_str());
+
+    this.gameType = gameReader.value('game_type').readInt();
+    if (gameReader.hasValue('mission_level')) {
+      this.tutorialLevel = gameReader.value('tutorial_level').readInt();
+      this.missionLevel = gameReader.value('mission_level').readInt();
+      this.winningPlayer = gameReader.value('winning_player').readInt();
+    } else {
+      /* Older saves have no game type of their own. */
+      this.setGameType(GameGameType.GameTypeOnePlayer, 0);
+    }
+    this.tick = gameReader.value('tick').readUint();
+    this.gameStatsCounter = gameReader.value('game_stats_counter').readUint();
+    this.historyCounter = gameReader.value('history_counter').readUint();
+    let rndStr: string;
+    try {
+      rndStr = gameReader.value('random').readString();
+      this.rnd = new Random(rndStr);
+    } catch (e) {
+      rndStr = gameReader.value('rnd').readString();
+      // PORT: `ss >> r1 >> c >> r2 >> c >> r3` of a std::stringstream: three
+      // numbers with one character between each. The C++ leaves r1..r3
+      // unset when the text is something else; here they are 0.
+      const m = /^\s*(\d+)\s*\S\s*(\d+)\s*\S\s*(\d+)/.exec(rndStr);
+      const r1 = m === null ? 0 : u16(Number(m[1]));
+      const r2 = m === null ? 0 : u16(Number(m[2]));
+      const r3 = m === null ? 0 : u16(Number(m[3]));
+      this.rnd = new Random(r1, r2, r3);
+    }
+    this.nextIndex = gameReader.value('next_index').readU16();
+    this.flagSearchCounter = gameReader.value('flag_search_counter').readU16();
+    for (let i = 0; i < 4; i++) {
+      this.playerHistoryIndex[i] =
+        gameReader.value('player_history_index').at(i).readInt();
+    }
+    for (let i = 0; i < 3; i++) {
+      this.playerHistoryCounter[i] =
+        gameReader.value('player_history_counter').at(i).readInt();
+    }
+    this.resourceHistoryIndex = gameReader.value('resource_history_index').readInt();
+    this.maxNextIndex = gameReader.value('max_next_index').readU16();
+    /* Older saves did not use the scheduler slots. */
+    if (this.maxNextIndex < 33) this.maxNextIndex = 33;
+    this.mapGoldMoraleFactor = gameReader.value('map.gold_morale_factor').readInt();
+    let leaderBits = 0;
+    leaderBits = gameReader.value('player_score_leader').readInt();
+    this.setScoreLeaderBits(leaderBits);
+
+    this.goldTotal = gameReader.value('gold_deposit').readUint();
+    if (gameReader.hasValue('ai_ticks')) {
+      this.aiGame.ticks288 = gameReader.value('ai_ticks').readInt();
+    }
+    /* Older saves did not keep these: the generator of the map is the game's,
+       the counters start again. */
+    if (gameReader.hasValue('map_random')) {
+      const mapRndStr = gameReader.value('map_random').readString();
+      this.initMapRnd = new Random(mapRndStr);
+    } else {
+      this.initMapRnd = new Random(this.rnd);
+    }
+    if (gameReader.hasValue('knight_morale_counter')) {
+      this.knightMoraleCounter = gameReader.value('knight_morale_counter').readInt();
+    }
+    if (gameReader.hasValue('inventory_schedule_counter')) {
+      this.inventoryScheduleCounter =
+        gameReader.value('inventory_schedule_counter').readInt();
+    }
+    if (gameReader.hasValue('game_end_pending')) {
+      let pending = 0;
+      pending = gameReader.value('game_end_pending').readInt();
+      this.gameEndPending = (pending !== 0);
+    }
+
+    // PORT: the C++ struct is uninitialised here; every field is read below.
+    const updateState = new GameMap.UpdateState();
+    updateState.removeSignsCounter =
+      gameReader.value('update_state.remove_signs_counter').readInt();
+    updateState.lastTick = gameReader.value('update_state.last_tick').readU16();
+    updateState.counter = gameReader.value('update_state.counter').readInt();
+    const x = gameReader.value('update_state.initial_pos').at(0).readInt();
+    const y = gameReader.value('update_state.initial_pos').at(1).readInt();
+    updateState.initialPos = this.map.pos(x, y);
+    this.map.setUpdateState(updateState);
+
+    for (const subreader of reader.getSections('player')) {
+      const p = this.players.getOrInsert(subreader.getNumber());
+      p.loadText(subreader);
+      /* Older saves did not use the AI slots. */
+      if (p.isAi() && this.maxNextIndex < 49) this.maxNextIndex = 49;
+    }
+
+    for (const subreader of reader.getSections('flag')) {
+      const p = this.flags.getOrInsert(subreader.getNumber());
+      p.loadText(subreader);
+    }
+
+    sections = reader.getSections('building');
+    for (const subreader of reader.getSections('building')) {
+      const p = this.buildings.getOrInsert(subreader.getNumber());
+      p.loadText(subreader);
+    }
+
+    for (const subreader of reader.getSections('inventory')) {
+      const p = this.inventories.getOrInsert(subreader.getNumber());
+      p.loadText(subreader);
+    }
+
+    for (const subreader of reader.getSections('serf')) {
+      const p = this.serfs.getOrInsert(subreader.getNumber());
+      p.loadText(subreader);
+    }
+
+    /* Restore idle serf flag */
+    for (const serf of this.serfs) {
+      if (serf.getIndex() === 0) continue;
+
+      if (serf.getState() === SerfState.StateIdleOnPath ||
+          serf.getState() === SerfState.StateWaitIdleOnPath) {
+        this.map.setIdleSerf(serf.getPos());
+      }
+    }
+
+    /* Restore building index */
+    for (const building of this.buildings) {
+      if (building.getIndex() === 0) continue;
+
+      if (this.map.getObj(building.getPosition()) <
+            MapObject.ObjectSmallBuilding ||
+          this.map.getObj(building.getPosition()) > MapObject.ObjectCastle) {
+        throw new ExceptionFreeserf('Map data does not match building ' +
+                                    building.getIndex() + ' position.');
+      }
+
+      this.map.setObjIndex(building.getPosition(), building.getIndex());
+    }
+
+    /* Restore flag index */
+    for (const flag of this.flags) {
+      if (flag.getIndex() === 0) continue;
+
+      if (this.map.getObj(flag.getPosition()) !== MapObject.ObjectFlag) {
+        throw new ExceptionFreeserf('Map data does not match flag ' +
+                                    flag.getIndex() + ' position.');
+      }
+
+      this.map.setObjIndex(flag.getPosition(), flag.getIndex());
+    }
+
+    this.gameSpeed = 0;
+    this.gameSpeedSave = DEFAULT_GAME_SPEED;
+
+    // PORT: not in the C++, which does not save these two. The game is
+    // paused here and goes on at the speed it had; older files have neither value.
+    if (gameReader.hasValue('const_tick')) {
+      this.constTick = gameReader.value('const_tick').readUint();
+    }
+    if (gameReader.hasValue('game_speed')) {
+      const speed = gameReader.value('game_speed').readUint();
+      if (speed >= 1 && speed <= 40) {
+        this.gameSpeedSave = speed;
+      }
+    }
+
+    /* Older saves did not keep the castle of a player. */
+    for (const building of this.buildings) {
+      if (building.getIndex() === 0 ||
+          building.getType() !== BuildingType.TypeCastle) {
+        continue;
+      }
+      const player = this.players.get(building.getOwner());
+      if (player !== null) {
+        player.restoreCastle(building);
+      }
+    }
+
+    /* The owners of the land are not saved: computed again from the military
+       buildings. That would also update the threat levels of the military
+       buildings, which the game updates only when the land near them
+       changes: they stay as saved. */
+    const threatLevels = new Map<number, number>();
+    for (const building of this.buildings) {
+      threatLevels.set(building.getIndex(), building.getThreatLevel());
+    }
+    this.initLandOwnership();
+    for (const building of this.buildings) {
+      building.setThreatLevel(threatLevels.get(building.getIndex()) ?? 0);
+    }
+  }
+
+  // operator << (SaveWriterText &writer, Game &game)
+  saveText(writer: SaveWriterText): void {
+    writer.value('map.size').write(this.map.getSize());
+    writer.value('game_type').write(this.gameType);
+    writer.value('tutorial_level').write(this.tutorialLevel);
+    writer.value('mission_level').write(this.missionLevel);
+    writer.value('winning_player').write(this.winningPlayer);
+    writer.value('tick').writeUint(this.tick);
+    writer.value('game_stats_counter').writeUint(this.gameStatsCounter);
+    writer.value('history_counter').writeUint(this.historyCounter);
+    writer.value('random').write(this.rnd.toString());
+
+    writer.value('next_index').write(this.nextIndex);
+    writer.value('flag_search_counter').write(this.flagSearchCounter);
+
+    for (let i = 0; i < 4; i++) {
+      writer.value('player_history_index').write(this.playerHistoryIndex[i]);
+    }
+    for (let i = 0; i < 3; i++) {
+      writer.value('player_history_counter').write(this.playerHistoryCounter[i]);
+    }
+    writer.value('resource_history_index').write(this.resourceHistoryIndex);
+
+    writer.value('max_next_index').write(this.maxNextIndex);
+    writer.value('ai_ticks').write(this.aiGame.ticks288);
+    // PORT: not in the C++, see loadText().
+    writer.value('const_tick').writeUint(this.constTick);
+    writer.value('game_speed').writeUint(this.getSpeed());
+    writer.value('map_random').write(this.initMapRnd.toString());
+    writer.value('knight_morale_counter').write(this.knightMoraleCounter);
+    writer.value('inventory_schedule_counter').write(
+      this.inventoryScheduleCounter);
+    writer.value('game_end_pending').write(this.gameEndPending ? 1 : 0);
+    writer.value('map.gold_morale_factor').write(this.mapGoldMoraleFactor);
+    writer.value('player_score_leader').write(
+      ((this.landLeader >= 0 ? BIT(this.landLeader) : 0) |
+       (this.militaryLeader >= 0 ? BIT(this.militaryLeader + 4) : 0)));
+
+    writer.value('gold_deposit').writeUint(this.goldTotal);
+
+    const updateState = this.map.getUpdateState();
+    writer.value('update_state.remove_signs_counter').write(
+      updateState.removeSignsCounter);
+    writer.value('update_state.last_tick').write(updateState.lastTick);
+    writer.value('update_state.counter').write(updateState.counter);
+    writer.value('update_state.initial_pos').write(this.map.posCol(
+      updateState.initialPos));
+    writer.value('update_state.initial_pos').write(this.map.posRow(
+      updateState.initialPos));
+
+    for (const player of this.players) {
+      const playerWriter = writer.addSection('player',
+                                             player.getIndex());
+      player.saveText(playerWriter);
+    }
+
+    for (const flag of this.flags) {
+      if (flag.getIndex() === 0) continue;
+      const flagWriter = writer.addSection('flag', flag.getIndex());
+      flag.saveText(flagWriter);
+    }
+
+    for (const building of this.buildings) {
+      if (building.getIndex() === 0) continue;
+      const buildingWriter = writer.addSection('building',
+                                               building.getIndex());
+      building.saveText(buildingWriter);
+    }
+
+    for (const inventory of this.inventories) {
+      const inventoryWriter = writer.addSection('inventory',
+                                                inventory.getIndex());
+      inventory.saveText(inventoryWriter);
+    }
+
+    for (const serf of this.serfs) {
+      if (serf.getIndex() === 0) continue;
+      const serfWriter = writer.addSection('serf', serf.getIndex());
+      serf.saveText(serfWriter);
+    }
+
+    this.map.saveText(writer);
+  }
 
   addGoldTotal(delta: number): void {
     if (delta < 0) {

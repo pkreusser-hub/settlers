@@ -20,7 +20,7 @@
  * along with freeserf.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { BIT, BIT_TEST, ExceptionFreeserf, clamp, i32, idiv, u16, u32 } from './misc';
+import { BIT, BIT_TEST, ExceptionFreeserf, clamp, i32, idiv, u16, u32, u8 } from './misc';
 import { GameObject } from './objects';
 import { ResourceType } from './resource';
 import type { ResourceMap } from './resource';
@@ -34,6 +34,7 @@ import { MapObject, MapTerrain } from './map';
 import type { MapPos } from './map-geometry';
 import type { Game } from './game';
 import { AI } from './ai';
+import type { SaveReaderText, SaveReaderTextValue, SaveWriterText } from './savegame';
 
 // PORT: Serf::SerfMap (std::map<Serf::Type, unsigned int>). Declared here
 // structurally so this module does not depend on how serf.ts spells it.
@@ -537,6 +538,12 @@ export class Player extends GameObject {
   }
   isAi(): boolean {
     return this.computer;
+  }
+
+  // PORT: not in the C++. A player of a loaded game that a person takes
+  // over in an online game.
+  setHuman(): void {
+    this.computer = false;
   }
 
   isEmergencyActive(): boolean {
@@ -1859,7 +1866,379 @@ export class Player extends GameObject {
     this.wheatMill = val;
   }
 
-  // TODO(savegame)
+  // PORT: operator>> (SaveReaderBinary) is not ported (the binary reader
+  // SaveReaderBinary is not ported).
+
+  // PORT: operator>> (SaveReaderText &reader, Player &player).
+  loadText(reader: SaveReaderText): void {
+    let bits = 0;
+    bits = reader.value('flags').readInt();
+    this.setFlagsBits(bits);
+    bits = reader.value('build').readInt();
+    this.setBuildBits(bits);
+    let val: number;
+    val = reader.value('color').at(0).readUint(); this.color.red = u8(val);
+    val = reader.value('color').at(1).readUint(); this.color.green = u8(val);
+    val = reader.value('color').at(2).readUint(); this.color.blue = u8(val);
+    // PORT: face is a size_t; it is read as the 32-bit unsigned value (see
+    // the constructor).
+    this.face = reader.value('face').readUint();
+    /* Older saves have no emergency program; it counts as over. */
+    if (reader.hasValue('emergency_flags')) {
+      bits = reader.value('emergency_flags').readInt();
+      this.setEmergencyBits(bits);
+      this.emergencyCounter = reader.value('emergency_counter').readInt();
+      this.extraPlanks = reader.value('extra_planks').readUint();
+      this.extraStone = reader.value('extra_stone').readUint();
+      this.lumberjackIndex = reader.value('lumberjack_index').readUint();
+      this.sawmillIndex = reader.value('sawmill_index').readUint();
+      this.stonecutterIndex = reader.value('stonecutter_index').readUint();
+    }
+    /* Saves from before the in-game bit: every player with a face takes
+       part in the game. */
+    if (this.face !== 0) this.inGame = true;
+    for (let i = 0; i < 9; i++) {
+      this.toolPrio[i] = reader.value('tool_prio').at(i).readInt();
+    }
+    for (let i = 0; i < 26; i++) {
+      this.resourceCount[i] = reader.value('resource_count').at(i).readInt();
+      this.flagPrio[i] = reader.value('flag_prio').at(i).readInt();
+      this.serfCount[i] = reader.value('serf_count').at(i).readInt();
+      this.inventoryPrio[i] = reader.value('inventory_prio').at(i).readInt();
+    }
+    this.serfCount[26] = reader.value('serf_count').at(26).readInt();
+    for (let i = 0; i < 4; i++) {
+      this.knightOccupation[i] = reader.value('knight_occupation').at(i).readInt();
+      this.attackingKnights[i] = reader.value('attacking_knights').at(i).readInt();
+    }
+    /* All 24 types; older saves have 23 of them, without the gold
+       smelters. */
+    const completed = reader.value('completed_building_count');
+    const incomplete = reader.value('incomplete_building_count');
+    const completedSize = completed.size();
+    const incompleteSize = incomplete.size();
+    for (let i = 0; i < 24 && i < completedSize && i < incompleteSize; i++) {
+      this.completedBuildingCount[i] = completed.at(i).readInt();
+      this.incompleteBuildingCount[i] = incomplete.at(i).readInt();
+    }
+    for (let i = 0; i < 64; i++) {
+      this.attackingBuildings[i] = reader.value('attacking_buildings').at(i).readInt();
+    }
+    this.initialSupplies = reader.value('initial_supplies').readUint();
+    this.knightsToSpawn = reader.value('knights_to_spawn').readInt();
+    this.totalBuildingScore = reader.value('total_building_score').readUint();
+    this.totalMilitaryScore = reader.value('total_military_score').readUint();
+    this.lastTick = reader.value('last_tick').readU16();
+    this.reproductionCounter = reader.value('reproduction_counter').readInt();
+    this.reproductionReset = reader.value('reproduction_reset').readUint();
+    this.serfToKnightRate = reader.value('serf_to_knight_rate').readInt();
+    this.serfToKnightCounter = reader.value('serf_to_knight_counter').readU16();
+    this.attackingBuildingCount = reader.value('attacking_building_count').readInt();
+    this.totalAttackingKnights = reader.value('total_attacking_knights').readInt();
+    this.buildingAttacked = reader.value('building_attacked').readInt();
+    this.knightsAttacking = reader.value('knights_attacking').readInt();
+    this.foodStonemine = reader.value('food_stonemine').readInt();
+    this.foodCoalmine = reader.value('food_coalmine').readInt();
+    this.foodIronmine = reader.value('food_ironmine').readInt();
+    this.foodGoldmine = reader.value('food_goldmine').readInt();
+    this.planksConstruction = reader.value('planks_construction').readInt();
+    this.planksBoatbuilder = reader.value('planks_boatbuilder').readInt();
+    this.planksToolmaker = reader.value('planks_toolmaker').readInt();
+    this.steelToolmaker = reader.value('steel_toolmaker').readInt();
+    this.steelWeaponsmith = reader.value('steel_weaponsmith').readInt();
+    this.coalSteelsmelter = reader.value('coal_steelsmelter').readInt();
+    this.coalGoldsmelter = reader.value('coal_goldsmelter').readInt();
+    this.coalWeaponsmith = reader.value('coal_weaponsmith').readInt();
+    this.wheatPigfarm = reader.value('wheat_pigfarm').readInt();
+    this.wheatMill = reader.value('wheat_mill').readInt();
+    this.castleScore = reader.value('castle_score').readInt();
+    this.castleKnights = reader.value('castle_knights').readInt();
+    this.castleKnightsWanted = reader.value('castle_knights_wanted').readInt();
+
+    /* Computer player state (all ints, see ai.h). */
+    if (reader.hasValue('ai')) {
+      this.knightCycleCounter = reader.value('knight_cycle_counter').readInt();
+      this.aiIntelligence = reader.value('ai_intelligence').readUint();
+      this.aiValue0 = reader.value('ai_values').at(0).readInt();
+      this.aiValue1 = reader.value('ai_values').at(1).readInt();
+      this.aiValue2 = reader.value('ai_values').at(2).readInt();
+      this.aiValue3 = reader.value('ai_values').at(3).readInt();
+      this.aiValue4 = reader.value('ai_values').at(4).readInt();
+      this.aiValue5 = reader.value('ai_values').at(5).readInt();
+      // PORT: the C++ reads the struct as an array of ints
+      // (reinterpret_cast<int *>(&player.ai)); playerAiInts() lists the
+      // fields in the order of their declaration in ai.h.
+      const ai = playerAiInts(this.ai);
+      for (let i = 0; i < ai.length; i++) {
+        ai[i].set(reader.value('ai').at(i).readInt());
+      }
+    } else if (this.isAi()) {
+      /* Older saves have no computer player state: the AI starts with the
+         values of its face and the highest intelligence, past the castle
+         placement if the castle stands. */
+      this.initAiValues(this.face);
+      this.aiIntelligence = 1300 * 40 + 13535;
+      if (this.hasCastle()) {
+        this.ai.phase = 2;
+        this.ai.counter = 0xffff;
+      }
+    }
+
+    /* Older saves did not keep these. The castle is found again after
+       the buildings (Game). */
+    if (reader.hasValue('castle')) {
+      this.building = reader.value('castle').readInt();
+      this.castleInventory = reader.value('castle_inventory').readInt();
+    }
+    if (reader.hasValue('cont_search_after_non_optimal_find')) {
+      this.contSearchAfterNonOptimalFind = reader
+        .value('cont_search_after_non_optimal_find')
+        .readInt();
+      this.sendGenericDelay = reader.value('send_generic_delay').readInt();
+      this.sendKnightDelay = reader.value('send_knight_delay').readInt();
+      this.knightMorale = reader.value('knight_morale').readInt();
+      this.goldDeposited = reader.value('gold_deposited').readInt();
+      this.militaryMaxGold = reader.value('military_max_gold').readInt();
+    }
+    if (reader.hasValue('timers')) {
+      const timers = reader.value('timers');
+      const timersSize = timers.size();
+      for (let i = 0; i + 1 < timersSize; i += 2) {
+        const timer = new PosTimer();
+        timer.timeout = timers.at(i).readInt();
+        timer.pos = timers.at(i + 1).readUint();
+        this.timers.push(timer);
+      }
+    }
+    if (reader.hasValue('messages')) {
+      const messages = reader.value('messages');
+      const messagesSize = messages.size();
+      for (let i = 0; i + 2 < messagesSize; i += 3) {
+        const message = new Message();
+        let type = 0;
+        type = messages.at(i).readInt();
+        message.type = type as MessageType;
+        message.pos = messages.at(i + 1).readUint();
+        message.data = messages.at(i + 2).readUint();
+        this.messages.push(message);
+      }
+    }
+    if (reader.hasValue('player_stat_history')) {
+      const history = reader.value('player_stat_history');
+      for (let mode = 0; mode < 16; mode++) {
+        for (let i = 0; i < 112; i++) {
+          this.playerStatHistory[mode][i] = history.at(mode * 112 + i).readInt();
+        }
+      }
+    }
+    if (reader.hasValue('resource_count_history')) {
+      const history = reader.value('resource_count_history');
+      for (let res = 0; res < 26; res++) {
+        for (let i = 0; i < 120; i++) {
+          this.resourceCountHistory[res][i] = history.at(res * 120 + i).readInt();
+        }
+      }
+    }
+  }
+
+  // PORT: operator<< (SaveWriterText &writer, Player &player).
+  saveText(writer: SaveWriterText): void {
+    writer.value('flags').write(this.getFlagsBits());
+    writer.value('build').write(this.getBuildBits());
+    writer.value('color').write(this.color.red);
+    writer.value('color').write(this.color.green);
+    writer.value('color').write(this.color.blue);
+    // PORT: face, reproduction_reset and ai_intelligence are size_t in the
+    // C++ and are written as 32-bit unsigned values: a face of -1 is
+    // 4294967295 here and 18446744073709551615 in a save of a 64-bit C++
+    // build (readUint() gives 4294967295 for both).
+    writer.value('face').writeUint(this.face);
+    writer.value('emergency_flags').write(this.getEmergencyBits());
+    writer.value('emergency_counter').write(this.emergencyCounter);
+    writer.value('extra_planks').writeUint(this.extraPlanks);
+    writer.value('extra_stone').writeUint(this.extraStone);
+    writer.value('lumberjack_index').writeUint(this.lumberjackIndex);
+    writer.value('sawmill_index').writeUint(this.sawmillIndex);
+    writer.value('stonecutter_index').writeUint(this.stonecutterIndex);
+
+    for (let i = 0; i < 9; i++) {
+      writer.value('tool_prio').write(this.toolPrio[i]);
+    }
+
+    for (let i = 0; i < 26; i++) {
+      writer.value('resource_count').write(this.resourceCount[i]);
+      writer.value('flag_prio').write(this.flagPrio[i]);
+      writer.value('serf_count').write(this.serfCount[i]);
+      writer.value('inventory_prio').write(this.inventoryPrio[i]);
+    }
+    writer.value('serf_count').write(this.serfCount[26]);
+
+    for (let i = 0; i < 4; i++) {
+      writer.value('knight_occupation').write(this.knightOccupation[i]);
+      writer.value('attacking_knights').write(this.attackingKnights[i]);
+    }
+
+    for (let i = 0; i < 24; i++) {
+      writer.value('completed_building_count').write(this.completedBuildingCount[i]);
+      writer.value('incomplete_building_count').write(this.incompleteBuildingCount[i]);
+    }
+
+    for (let i = 0; i < 64; i++) {
+      writer.value('attacking_buildings').write(this.attackingBuildings[i]);
+    }
+
+    writer.value('initial_supplies').writeUint(this.initialSupplies);
+    writer.value('knights_to_spawn').write(this.knightsToSpawn);
+
+    writer.value('total_building_score').writeUint(this.totalBuildingScore);
+    writer.value('total_military_score').writeUint(this.totalMilitaryScore);
+
+    writer.value('last_tick').write(this.lastTick);
+
+    writer.value('reproduction_counter').write(this.reproductionCounter);
+    writer.value('reproduction_reset').writeUint(this.reproductionReset);
+    writer.value('serf_to_knight_rate').write(this.serfToKnightRate);
+    writer.value('serf_to_knight_counter').write(this.serfToKnightCounter);
+
+    writer.value('attacking_building_count').write(this.attackingBuildingCount);
+    writer.value('total_attacking_knights').write(this.totalAttackingKnights);
+    writer.value('building_attacked').write(this.buildingAttacked);
+    writer.value('knights_attacking').write(this.knightsAttacking);
+
+    writer.value('food_stonemine').write(this.foodStonemine);
+    writer.value('food_coalmine').write(this.foodCoalmine);
+    writer.value('food_ironmine').write(this.foodIronmine);
+    writer.value('food_goldmine').write(this.foodGoldmine);
+
+    writer.value('planks_construction').write(this.planksConstruction);
+    writer.value('planks_boatbuilder').write(this.planksBoatbuilder);
+    writer.value('planks_toolmaker').write(this.planksToolmaker);
+
+    writer.value('steel_toolmaker').write(this.steelToolmaker);
+    writer.value('steel_weaponsmith').write(this.steelWeaponsmith);
+
+    writer.value('coal_steelsmelter').write(this.coalSteelsmelter);
+    writer.value('coal_goldsmelter').write(this.coalGoldsmelter);
+    writer.value('coal_weaponsmith').write(this.coalWeaponsmith);
+
+    writer.value('wheat_pigfarm').write(this.wheatPigfarm);
+    writer.value('wheat_mill').write(this.wheatMill);
+
+    writer.value('castle_score').write(this.castleScore);
+
+    writer.value('castle_knights').write(this.castleKnights);
+    writer.value('castle_knights_wanted').write(this.castleKnightsWanted);
+
+    writer.value('knight_cycle_counter').write(this.knightCycleCounter);
+    writer.value('ai_intelligence').writeUint(this.aiIntelligence);
+    writer.value('ai_values').write(this.aiValue0);
+    writer.value('ai_values').write(this.aiValue1);
+    writer.value('ai_values').write(this.aiValue2);
+    writer.value('ai_values').write(this.aiValue3);
+    writer.value('ai_values').write(this.aiValue4);
+    writer.value('ai_values').write(this.aiValue5);
+    // PORT: reinterpret_cast<const int *>(&player.ai), see loadText().
+    const ai = playerAiInts(this.ai);
+    for (let i = 0; i < ai.length; i++) {
+      writer.value('ai').write(ai[i].get());
+    }
+
+    writer.value('castle').write(this.building);
+    writer.value('castle_inventory').write(this.castleInventory);
+    writer
+      .value('cont_search_after_non_optimal_find')
+      .write(this.contSearchAfterNonOptimalFind);
+    writer.value('send_generic_delay').write(this.sendGenericDelay);
+    writer.value('send_knight_delay').write(this.sendKnightDelay);
+    writer.value('knight_morale').write(this.knightMorale);
+    writer.value('gold_deposited').write(this.goldDeposited);
+    writer.value('military_max_gold').write(this.militaryMaxGold);
+
+    /* The timers and messages of the player, as pairs or triples. */
+    for (const timer of this.timers) {
+      writer.value('timers').write(timer.timeout);
+      writer.value('timers').writeUint(timer.pos);
+    }
+    const messages: Messages = this.messages.slice();
+    while (messages.length !== 0) {
+      const message = messages[0];
+      writer.value('messages').write(message.type as number);
+      writer.value('messages').writeUint(message.pos);
+      writer.value('messages').writeUint(message.data);
+      messages.shift();
+    }
+
+    for (let mode = 0; mode < 16; mode++) {
+      for (let i = 0; i < 112; i++) {
+        writer.value('player_stat_history').write(this.playerStatHistory[mode][i]);
+      }
+    }
+    for (let res = 0; res < 26; res++) {
+      for (let i = 0; i < 120; i++) {
+        writer.value('resource_count_history').write(this.resourceCountHistory[res][i]);
+      }
+    }
+  }
+}
+
+// PORT: SaveReaderTextValue::size() (the count of the comma separated
+// parts) is not in savegame.ts, and its parts are protected. The count is
+// found with at(), which throws from the first index past the end.
+// PORT: the ints of a PlayerAI in the order of their declaration in ai.h,
+// which is the order the C++ sees through reinterpret_cast<int *>; the
+// count is sizeof(PlayerAI) / sizeof(int) (every member is an int).
+interface IntRef {
+  get(): number;
+  set(v: number): void;
+}
+
+function playerAiInts(ai: PlayerAI): IntRef[] {
+  const refs: IntRef[] = [];
+  const field = (obj: object, key: string | number): void => {
+    const o = obj as Record<string | number, number>;
+    refs.push({
+      get: () => o[key],
+      set: (v: number) => {
+        o[key] = v;
+      },
+    });
+  };
+  const fields = (obj: object, keys: string[]): void => {
+    for (const key of keys) field(obj, key);
+  };
+  const array = (arr: number[], n: number): void => {
+    for (let i = 0; i < n; i++) field(arr, i);
+  };
+
+  fields(ai, ['cursorCol', 'cursorRow', 'mapCursorType', 'panelBtnType']);
+  fields(ai, ['u_19a', 'u_19c', 'u_19e', 'u_1a0', 'u_1a2', 'u_1a4', 'u_1a6', 'u_1a8',
+              'u_1aa', 'u_1ac']);
+  fields(ai, ['militaryRatio', 'u_1b0', 'u_1b2', 'phase', 'counter', 'buildThreshold']);
+  fields(ai, ['u_1ba', 'u_1bc', 'u_1be', 'u_1c0', 'u_1c2', 'u_1c4', 'u_1c6', 'u_1c8',
+              'u_1ca', 'u_1cc', 'u_1ce', 'u_1d0', 'u_1d2', 'u_1d4', 'u_1d6', 'u_1d8',
+              'u_1da']);
+  for (let i = 0; i < 5; i++) {
+    const poi = ai.poi[i];
+    fields(poi, ['field_0', 'field_2', 'field_4', 'field_6', 'field_8']);
+    array(poi.bldCount, 25);
+    fields(poi, ['trees', 'field_3e', 'stones']);
+    array(poi.deposit, 4);
+    fields(poi, ['field_4a', 'field_4c', 'field_4e', 'field_50', 'field_52', 'field_54',
+                 'field_56']);
+  }
+  fields(ai, ['u_394', 'u_396', 'u_398', 'u_39a', 'u_39c', 'u_39e', 'u_3a0', 'u_3a2',
+              'u_3a4', 'u_3a6', 'u_3a8', 'u_3aa', 'u_3ac', 'u_3ae', 'u_3b0', 'u_3b2',
+              'u_3b4', 'u_3b6', 'u_3b8', 'u_3ba', 'u_3bc', 'u_3be', 'u_3c0', 'u_3c2',
+              'u_3c4', 'u_3c6', 'u_3c8', 'u_3ca', 'u_3cc', 'u_3ce']);
+  array(ai.buildWant, 25);
+  array(ai.buildDamp, 25);
+  for (let i = 0; i < AI_LOCATION_CATEGORIES; i++) {
+    for (let j = 0; j < AI_LOCATIONS_PER_CATEGORY; j++) {
+      fields(ai.locations[i][j], ['value', 'col', 'row']);
+    }
+  }
+
+  return refs;
 }
 
 /* A designated building counts as ready when it is finished or has all

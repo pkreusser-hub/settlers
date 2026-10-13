@@ -33,6 +33,7 @@ import { GameInfo } from '../game/mission';
 import type { Player } from '../game/player';
 import type { ResourceMap } from '../game/resource';
 import { ResourceType } from '../game/resource';
+import { GameStore } from '../game/savegame';
 import { SerfType } from '../game/serf';
 import {
   canPromoteSerfsToKnights,
@@ -3904,6 +3905,7 @@ export class PopupBox extends GuiObject {
         this.interface.closePopup();
         break;
       case Action.ACTION_SHOW_SAVE:
+        this.fileList.update();
         this.fileList.setDisplayed(true);
         this.fileField.setDisplayed(true);
         this.setBox(PopupBoxType.TypeLoadSave);
@@ -3922,11 +3924,7 @@ export class PopupBox extends GuiObject {
           fileName += '.save';
         }
         const filePath = this.fileList.getFolderPath() + '/' + fileName;
-        // TODO(savegame)
-        // PORT: GameStore::get_instance().save(file_path, game) is not
-        // ported. The no-op counts as a failed save: the box stays open, as
-        // in the C++ when save() returns false.
-        const saved = PopupBox.saveGame(filePath);
+        const saved = GameStore.getInstance().save(filePath, this.interface.getGame()!);
         if (saved) {
           this.interface.closePopup();
         }
@@ -3936,12 +3934,6 @@ export class PopupBox extends GuiObject {
         Log.Warn('popup', 'unhandled action ', action);
         break;
     }
-  }
-
-  // TODO(savegame)
-  // PORT: stands in for GameStore::get_instance().save(); saves nothing.
-  protected static saveGame(_filePath: string): boolean {
-    return false;
   }
 
   /* Generic handler for clicks in popup boxes. */

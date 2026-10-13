@@ -21,7 +21,7 @@
  * along with freeserf.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { BIT, BIT_TEST, ExceptionFreeserf, Log, u32 } from './misc';
+import { BIT, BIT_TEST, ExceptionFreeserf, Log, i32, u32 } from './misc';
 import { GameObject } from './objects';
 import { ResourceType } from './resource';
 import {
@@ -37,6 +37,7 @@ import type { Building } from './building';
 import type { Game } from './game';
 import type { Player } from './player';
 import type { Inventory } from './inventory';
+import type { SaveReaderText, SaveWriterText } from './savegame';
 
 // PORT: a struct in the C++ (declared uninitialised on the stack there);
 // a class here so `new SerfPathInfo()` gives the 16 element serfs array.
@@ -421,7 +422,104 @@ export class Flag extends GameObject {
     this.resourcesAccepted = false;
   }
 
-  // TODO(savegame)
+  // PORT: operator>> (SaveReaderBinary) is not ported (the binary reader
+  // SaveReaderBinary is not ported).
+
+  // PORT: operator>> (SaveReaderText &reader, Flag &flag).
+  loadText(reader: SaveReaderText): void {
+    let x = 0;
+    let y = 0;
+    x = reader.value('pos').at(0).readUint();
+    y = reader.value('pos').at(1).readUint();
+    this.pos = this.game.getMap().pos(x, y);
+    this.searchNum = reader.value('search_num').readInt();
+    this.searchDir = reader.value('search_dir').readInt();
+    let val: number;
+    val = reader.value('path_con').readUint();
+    if (reader.hasValue('owner')) {
+      this.pathCon = i32(val);
+      this.owner = reader.value('owner').readUint();
+    } else {
+      this.pathCon = val & 0x3f;
+      this.owner = (val >>> 6) & 3;
+    }
+    let bits = 0;
+    bits = reader.value('endpoints').readInt();
+    this.setEndpointBits(bits);
+    bits = reader.value('transporter').readInt();
+    this.setTransporterBits(bits);
+
+    for (const i of cycleDirectionsCw()) {
+      let len: number;
+      len = reader.value('length').at(i).readInt();
+      this.setLengthBits(i, len);
+      let objIndex: number;
+      objIndex = reader.value('other_endpoint').at(i).readUint();
+      if (this.hasBuilding() && i === Direction.DirectionUpLeft) {
+        this.otherEndpoint.b[Direction.DirectionUpLeft] =
+          this.game.createBuilding(objIndex);
+      } else {
+        let otherFlag: Flag | null = null;
+        if (objIndex !== 0) {
+          otherFlag = this.game.createFlag(objIndex);
+        }
+        this.otherEndpoint.f[i] = otherFlag;
+      }
+      bits = reader.value('other_end_dir').at(i).readInt();
+      this.setOtherEndBits(i, bits);
+    }
+
+    for (let i = 0; i < FLAG_MAX_RES_COUNT; i++) {
+      this.slot[i].type = reader.value('slot.type').at(i).readInt();
+      this.slot[i].dir = reader.value('slot.dir').at(i).readInt();
+      this.slot[i].dest = reader.value('slot.dest').at(i).readUint();
+    }
+
+    bits = reader.value('bld_flags').readInt();
+    this.inventoryBuilding = BIT_TEST(bits, 6) !== 0;
+    this.serfsAccepted = BIT_TEST(bits, 7) !== 0;
+    bits = reader.value('bld2_flags').readInt();
+    this.resourcesAccepted = BIT_TEST(bits, 7) !== 0;
+  }
+
+  // PORT: operator<< (SaveWriterText &writer, Flag &flag).
+  saveText(writer: SaveWriterText): void {
+    writer.value('pos').writeUint(this.game.getMap().posCol(this.pos));
+    writer.value('pos').writeUint(this.game.getMap().posRow(this.pos));
+    writer.value('search_num').write(this.searchNum);
+    writer.value('search_dir').write(this.searchDir);
+    writer.value('path_con').write(this.pathCon);
+    writer.value('owner').writeUint(this.owner);
+    writer.value('endpoints').write(this.getEndpointBits());
+    writer.value('transporter').write(this.getTransporterBits());
+
+    for (const d of cycleDirectionsCw()) {
+      writer.value('length').write(this.getLengthBits(d));
+      if (d === Direction.DirectionUpLeft && this.hasBuilding()) {
+        writer
+          .value('other_endpoint')
+          .writeUint(this.otherEndpoint.b[Direction.DirectionUpLeft]!.getIndex());
+      } else {
+        if (this.hasPath(d)) {
+          writer.value('other_endpoint').writeUint(this.otherEndpoint.f[d]!.getIndex());
+        } else {
+          writer.value('other_endpoint').write(0);
+        }
+      }
+      writer.value('other_end_dir').write(this.getOtherEndBits(d));
+    }
+
+    for (let i = 0; i < FLAG_MAX_RES_COUNT; i++) {
+      writer.value('slot.type').write(this.slot[i].type);
+      writer.value('slot.dir').write(this.slot[i].dir);
+      writer.value('slot.dest').writeUint(this.slot[i].dest);
+    }
+
+    writer
+      .value('bld_flags')
+      .write((this.inventoryBuilding ? BIT(6) : 0) | (this.serfsAccepted ? BIT(7) : 0));
+    writer.value('bld2_flags').write(this.resourcesAccepted ? BIT(7) : 0);
+  }
 
   // PORT: named schedule_known_dest_cb_ in the C++ (trailing underscore).
   scheduleKnownDestCb_(src: Flag, dest: Flag | null, slot: number): boolean {

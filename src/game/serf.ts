@@ -19,7 +19,7 @@
  * along with freeserf.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { BIT, BIT_TEST, ExceptionFreeserf, Log, NOT_REACHED, u16, u32 } from './misc';
+import { BIT, BIT_TEST, ExceptionFreeserf, i32, Log, NOT_REACHED, u16, u32 } from './misc';
 import { GameObject } from './objects';
 import { ResourceType } from './resource';
 import {
@@ -37,6 +37,7 @@ import type { Flag } from './flag';
 import type { Inventory } from './inventory';
 import { MessageType } from './player';
 import type { Game } from './game';
+import type { SaveReaderText, SaveWriterText } from './savegame';
 
 export enum SerfType {
   TypeNone = -1,
@@ -5799,7 +5800,482 @@ export class Serf extends GameObject {
     }
   }
 
-  // TODO(savegame)
+  // PORT: operator >> (SaveReaderBinary &reader, Serf &serf), the reader of
+  // the save games of the original DOS game, is not ported.
+
+  loadText(reader: SaveReaderText): void {
+    const type = reader.value('type').readInt();
+    try {
+      this.owner = reader.value('owner').readUint();
+      this.type = type as SerfType;
+    } catch (e) {
+      this.type = ((type >> 2) & 0x1f) as SerfType;
+      this.owner = type & 3;
+    }
+
+    this.animation = reader.value('animation').readInt();
+    this.counter = reader.value('counter').readInt();
+    const x = reader.value('pos').at(0).readInt();
+    const y = reader.value('pos').at(1).readInt();
+    this.pos = this.getGame().getMap().pos(x, y);
+    this.tick = reader.value('tick').readU16();
+    this.state = reader.value('state').readInt();
+    /* Older saves have only the values of the current state. */
+    if (reader.hasValue('state.raw')) {
+      const rawValue = reader.value('state.raw');
+      // PORT: the raw words are this.s.w (the shared storage of the union).
+      // SaveReaderTextValue has no size() here; at(i) throws at
+      // i >= size(), which ends the loop as `i < raw_value.size()` does.
+      const raw = this.s.w;
+      for (let i = 0; i < raw.length; i++) {
+        let part;
+        try {
+          part = rawValue.at(i);
+        } catch (e) {
+          break;
+        }
+        raw[i] = part.readInt();
+      }
+    }
+
+    switch (this.state) {
+      case SerfState.StateIdleInStock:
+        this.s.idleInStock.invIndex = reader.value('state.inventory').readUint();
+        break;
+
+      case SerfState.StateWalking:
+        this.s.walking.dest = reader.value('state.dest').readUint();
+        this.s.walking.dir = reader.value('state.dir').readInt();
+        this.s.walking.waitCounter = reader.value('state.wait_counter').readInt();
+        this.s.walking.dir1 = reader.value('state.other_dir').readInt();
+        break;
+
+      case SerfState.StateTransporting:
+      case SerfState.StateDelivering:
+        this.s.transporting.res = reader.value('state.res').readInt();
+        this.s.transporting.dest = reader.value('state.dest').readUint();
+        this.s.transporting.dir = reader.value('state.dir').readInt();
+        this.s.transporting.waitCounter = reader.value('state.wait_counter').readInt();
+        break;
+
+      case SerfState.StateEnteringBuilding:
+        this.s.enteringBuilding.fieldB = reader.value('state.field_B').readInt();
+        this.s.enteringBuilding.slopeLen = reader.value('state.slope_len').readInt();
+        break;
+
+      case SerfState.StateLeavingBuilding:
+      case SerfState.StateReadyToLeave:
+      case SerfState.StateKnightLeaveForFight:
+        this.s.leavingBuilding.fieldB = reader.value('state.field_B').readInt();
+        this.s.leavingBuilding.dest = reader.value('state.dest').readUint();
+        this.s.leavingBuilding.dest2 = reader.value('state.dest2').readInt();
+        this.s.leavingBuilding.dir = reader.value('state.dir').readInt();
+        this.s.leavingBuilding.nextState = reader.value('state.next_state').readInt();
+        break;
+
+      case SerfState.StateReadyToEnter:
+        this.s.readyToEnter.fieldB = reader.value('state.field_B').readInt();
+        break;
+
+      case SerfState.StateDigging:
+        this.s.digging.hIndex = reader.value('state.h_index').readInt();
+        this.s.digging.targetH = reader.value('state.target_h').readUint();
+        this.s.digging.digPos = reader.value('state.dig_pos').readInt();
+        this.s.digging.substate = reader.value('state.substate').readInt();
+        break;
+
+      case SerfState.StateBuilding:
+        this.s.building.mode = reader.value('state.mode').readInt();
+        this.s.building.bldIndex = reader.value('state.bld_index').readUint();
+        this.s.building.materialStep = reader.value('state.material_step').readUint();
+        this.s.building.counter = reader.value('state.counter').readUint();
+        break;
+
+      case SerfState.StateBuildingCastle:
+        this.s.buildingCastle.invIndex = reader.value('state.inv_index').readUint();
+        break;
+
+      case SerfState.StateMoveResourceOut:
+      case SerfState.StateDropResourceOut:
+        this.s.moveResourceOut.res = reader.value('state.res').readUint();
+        this.s.moveResourceOut.resDest = reader.value('state.res_dest').readUint();
+        this.s.moveResourceOut.nextState = reader.value('state.next_state').readInt();
+        break;
+
+      case SerfState.StateReadyToLeaveInventory:
+        this.s.readyToLeaveInventory.mode = reader.value('state.mode').readInt();
+        this.s.readyToLeaveInventory.dest = reader.value('state.dest').readUint();
+        this.s.readyToLeaveInventory.invIndex = reader.value('state.inv_index').readUint();
+        break;
+
+      case SerfState.StateFreeWalking:
+      case SerfState.StateLogging:
+      case SerfState.StatePlanting:
+      case SerfState.StateStoneCutting:
+      case SerfState.StateStoneCutterFreeWalking:
+      case SerfState.StateFishing:
+      case SerfState.StateFarming:
+      case SerfState.StateSamplingGeoSpot:
+      case SerfState.StateKnightFreeWalking:
+      case SerfState.StateKnightAttackingFree:
+      case SerfState.StateKnightAttackingFreeWait:
+        if (reader.hasValue('state.dist_col')) {
+          this.s.freeWalking.distCol = reader.value('state.dist_col').readInt();
+        } else {
+          this.s.freeWalking.distCol = reader.value('state.dist1').readInt();
+        }
+        if (reader.hasValue('state.dist_row')) {
+          this.s.freeWalking.distRow = reader.value('state.dist_row').readInt();
+        } else {
+          this.s.freeWalking.distRow = reader.value('state.dist2').readInt();
+        }
+        this.s.freeWalking.negDist1 = reader.value('state.neg_dist').readInt();
+        this.s.freeWalking.negDist2 = reader.value('state.neg_dist2').readInt();
+        this.s.freeWalking.flags = reader.value('state.flags').readInt();
+        break;
+
+      case SerfState.StateSawing:
+        this.s.sawing.mode = reader.value('state.mode').readInt();
+        break;
+
+      case SerfState.StateLost:
+        this.s.lost.fieldB = reader.value('state.field_B').readInt();
+        break;
+
+      case SerfState.StateMining:
+        this.s.mining.substate = reader.value('state.substate').readUint();
+        this.s.mining.res = reader.value('state.res').readInt();
+        const deposit = reader.value('state.deposit').readUint();
+        this.s.mining.deposit = deposit as MapMinerals;
+        break;
+
+      case SerfState.StateSmelting:
+        this.s.smelting.mode = reader.value('state.mode').readInt();
+        this.s.smelting.counter = reader.value('state.counter').readInt();
+        this.s.smelting.type = reader.value('state.type').readUint();
+        break;
+
+      case SerfState.StateMilling:
+        this.s.milling.mode = reader.value('state.mode').readInt();
+        break;
+
+      case SerfState.StateBaking:
+        this.s.baking.mode = reader.value('state.mode').readInt();
+        break;
+
+      case SerfState.StatePigFarming:
+        this.s.pigfarming.mode = reader.value('state.mode').readInt();
+        break;
+
+      case SerfState.StateButchering:
+        this.s.butchering.mode = reader.value('state.mode').readInt();
+        break;
+
+      case SerfState.StateMakingWeapon:
+        this.s.makingWeapon.mode = reader.value('state.mode').readInt();
+        break;
+
+      case SerfState.StateMakingTool:
+        this.s.makingTool.mode = reader.value('state.mode').readInt();
+        break;
+
+      case SerfState.StateBuildingBoat:
+        this.s.buildingBoat.mode = reader.value('state.mode').readInt();
+        break;
+
+      case SerfState.StateKnightEngagingBuilding:
+      case SerfState.StateKnightPrepareAttacking:
+      case SerfState.StateKnightPrepareDefendingFreeWait:
+      case SerfState.StateKnightAttackingDefeatFree:
+      case SerfState.StateKnightAttacking:
+      case SerfState.StateKnightAttackingVictory:
+      case SerfState.StateKnightEngageAttackingFree:
+      case SerfState.StateKnightEngageAttackingFreeJoin:
+        if (reader.hasValue('state.move')) {
+          this.s.attacking.move = reader.value('state.move').readInt();
+        } else {
+          this.s.attacking.move = reader.value('state.field_B').readInt();
+        }
+        if (reader.hasValue('state.attacker_won')) {
+          this.s.attacking.attackerWon = reader.value('state.attacker_won').readInt();
+        } else {
+          this.s.attacking.attackerWon = reader.value('state.field_C').readInt();
+        }
+        this.s.attacking.fieldD = reader.value('state.field_D').readInt();
+        this.s.attacking.defIndex = reader.value('state.def_index').readInt();
+        break;
+
+      case SerfState.StateKnightAttackingVictoryFree:
+        // PORT: the writer saves this state with the values of the
+        // attacking group (no dist_col, dist_row or field_C), so the C++
+        // fails to load its own file here. Such a file keeps the words of
+        // "state.raw", read above.
+        if (reader.hasValue('state.attacker_won') && !reader.hasValue('state.dist_col') &&
+            !reader.hasValue('state.field_C')) {
+          break;
+        }
+        if (reader.hasValue('state.move')) {
+          this.s.attackingVictoryFree.move = reader.value('state.move').readInt();
+        } else {
+          this.s.attackingVictoryFree.move = reader.value('state.field_B').readInt();
+        }
+        if (reader.hasValue('state.dist_col')) {
+          this.s.attackingVictoryFree.distCol = reader.value('state.dist_col').readInt();
+        } else {
+          this.s.attackingVictoryFree.distCol = reader.value('state.field_C').readInt();
+        }
+        if (reader.hasValue('state.dist_row')) {
+          this.s.attackingVictoryFree.distRow = reader.value('state.dist_row').readInt();
+        } else {
+          this.s.attackingVictoryFree.distRow = reader.value('state.field_D').readInt();
+        }
+        this.s.attackingVictoryFree.defIndex = reader.value('state.def_index').readInt();
+        break;
+
+      case SerfState.StateKnightDefendingFree:
+      case SerfState.StateKnightEngageDefendingFree:
+        this.s.defendingFree.distCol = reader.value('state.dist_col').readInt();
+        this.s.defendingFree.distRow = reader.value('state.dist_row').readInt();
+        this.s.defendingFree.fieldD = reader.value('state.field_D').readInt();
+        this.s.defendingFree.otherDistCol = reader.value('state.other_dist_col').readInt();
+        this.s.defendingFree.otherDistRow = reader.value('state.other_dist_row').readInt();
+        break;
+
+      case SerfState.StateKnightLeaveForWalkToFight:
+        this.s.leaveForWalkToFight.distCol = reader.value('state.dist_col').readInt();
+        this.s.leaveForWalkToFight.distRow = reader.value('state.dist_row').readInt();
+        this.s.leaveForWalkToFight.fieldD = reader.value('state.field_D').readInt();
+        this.s.leaveForWalkToFight.fieldE = reader.value('state.field_E').readInt();
+        this.s.leaveForWalkToFight.nextState = reader.value('state.next_state').readInt();
+        break;
+
+      case SerfState.StateIdleOnPath:
+      case SerfState.StateWaitIdleOnPath:
+      case SerfState.StateWakeAtFlag:
+      case SerfState.StateWakeOnPath:
+        this.s.idleOnPath.revDir = reader.value('state.rev_dir').readInt();
+        const flagIdex = reader.value('state.flag').readUint();
+        this.s.idleOnPath.flag = i32(flagIdex);
+        this.s.idleOnPath.fieldE = reader.value('state.field_E').readInt();
+        break;
+
+      case SerfState.StateDefendingHut:
+      case SerfState.StateDefendingTower:
+      case SerfState.StateDefendingFortress:
+      case SerfState.StateDefendingCastle:
+        this.s.defending.nextKnight = reader.value('state.next_knight').readInt();
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  saveText(writer: SaveWriterText): void {
+    writer.value('type').write(this.type);
+    writer.value('owner').write(this.owner);
+    writer.value('animation').write(this.animation);
+    writer.value('counter').write(this.counter);
+    writer.value('pos').write(this.getGame().getMap().posCol(this.pos));
+    writer.value('pos').write(this.getGame().getMap().posRow(this.pos));
+    writer.value('tick').write(this.tick);
+    writer.value('state').write(this.state);
+    /* The whole memory of the states: a state may go on with the values that
+       an earlier state left in it, as in the original. */
+    // PORT: static_assert(sizeof(serf.s) % sizeof(int) == 0): the union is
+    // an Int32Array here.
+    const raw = this.s.w;
+    for (let i = 0; i < raw.length; i++) {
+      writer.value('state.raw').write(raw[i]);
+    }
+
+    switch (this.state) {
+      case SerfState.StateIdleInStock:
+        writer.value('state.inventory').write(this.s.idleInStock.invIndex);
+        break;
+
+      case SerfState.StateWalking:
+        writer.value('state.dest').write(this.s.walking.dest);
+        writer.value('state.dir').write(this.s.walking.dir);
+        writer.value('state.wait_counter').write(this.s.walking.waitCounter);
+        writer.value('state.other_dir').write(this.s.walking.dir1);
+        break;
+
+      case SerfState.StateTransporting:
+      case SerfState.StateDelivering:
+        writer.value('state.res').write(this.s.transporting.res);
+        writer.value('state.dest').write(this.s.transporting.dest);
+        writer.value('state.dir').write(this.s.transporting.dir);
+        writer.value('state.wait_counter').write(this.s.transporting.waitCounter);
+        break;
+
+      case SerfState.StateEnteringBuilding:
+        writer.value('state.field_B').write(this.s.enteringBuilding.fieldB);
+        writer.value('state.slope_len').write(this.s.enteringBuilding.slopeLen);
+        break;
+
+      case SerfState.StateLeavingBuilding:
+      case SerfState.StateReadyToLeave:
+      case SerfState.StateKnightLeaveForFight:
+        writer.value('state.field_B').write(this.s.leavingBuilding.fieldB);
+        writer.value('state.dest').write(this.s.leavingBuilding.dest);
+        writer.value('state.dest2').write(this.s.leavingBuilding.dest2);
+        writer.value('state.dir').write(this.s.leavingBuilding.dir);
+        writer.value('state.next_state').write(this.s.leavingBuilding.nextState);
+        break;
+
+      case SerfState.StateReadyToEnter:
+        writer.value('state.field_B').write(this.s.readyToEnter.fieldB);
+        break;
+
+      case SerfState.StateDigging:
+        writer.value('state.h_index').write(this.s.digging.hIndex);
+        writer.value('state.target_h').write(this.s.digging.targetH);
+        writer.value('state.dig_pos').write(this.s.digging.digPos);
+        writer.value('state.substate').write(this.s.digging.substate);
+        break;
+
+      case SerfState.StateBuilding:
+        writer.value('state.mode').write(this.s.building.mode);
+        writer.value('state.bld_index').write(this.s.building.bldIndex);
+        writer.value('state.material_step').write(this.s.building.materialStep);
+        writer.value('state.counter').write(this.s.building.counter);
+        break;
+
+      case SerfState.StateBuildingCastle:
+        writer.value('state.inv_index').write(this.s.buildingCastle.invIndex);
+        break;
+
+      case SerfState.StateMoveResourceOut:
+      case SerfState.StateDropResourceOut:
+        writer.value('state.res').write(this.s.moveResourceOut.res);
+        writer.value('state.res_dest').write(this.s.moveResourceOut.resDest);
+        writer.value('state.next_state').write(this.s.moveResourceOut.nextState);
+        break;
+
+      case SerfState.StateReadyToLeaveInventory:
+        writer.value('state.mode').write(this.s.readyToLeaveInventory.mode);
+        writer.value('state.dest').write(this.s.readyToLeaveInventory.dest);
+        writer.value('state.inv_index').write(this.s.readyToLeaveInventory.invIndex);
+        break;
+
+      case SerfState.StateFreeWalking:
+      case SerfState.StateLogging:
+      case SerfState.StatePlanting:
+      case SerfState.StateStoneCutting:
+      case SerfState.StateStoneCutterFreeWalking:
+      case SerfState.StateFishing:
+      case SerfState.StateFarming:
+      case SerfState.StateSamplingGeoSpot:
+      case SerfState.StateKnightFreeWalking:
+      case SerfState.StateKnightAttackingFree:
+      case SerfState.StateKnightAttackingFreeWait:
+        writer.value('state.dist_col').write(this.s.freeWalking.distCol);
+        writer.value('state.dist_row').write(this.s.freeWalking.distRow);
+        writer.value('state.neg_dist').write(this.s.freeWalking.negDist1);
+        writer.value('state.neg_dist2').write(this.s.freeWalking.negDist2);
+        writer.value('state.flags').write(this.s.freeWalking.flags);
+        break;
+
+      case SerfState.StateSawing:
+        writer.value('state.mode').write(this.s.sawing.mode);
+        break;
+
+      case SerfState.StateLost:
+        writer.value('state.field_B').write(this.s.lost.fieldB);
+        break;
+
+      case SerfState.StateMining:
+        writer.value('state.substate').write(this.s.mining.substate);
+        writer.value('state.res').write(this.s.mining.res);
+        writer.value('state.deposit').write(this.s.mining.deposit);
+        break;
+
+      case SerfState.StateSmelting:
+        writer.value('state.mode').write(this.s.smelting.mode);
+        writer.value('state.counter').write(this.s.smelting.counter);
+        writer.value('state.type').write(this.s.smelting.type);
+        break;
+
+      case SerfState.StateMilling:
+        writer.value('state.mode').write(this.s.milling.mode);
+        break;
+
+      case SerfState.StateBaking:
+        writer.value('state.mode').write(this.s.baking.mode);
+        break;
+
+      case SerfState.StatePigFarming:
+        writer.value('state.mode').write(this.s.pigfarming.mode);
+        break;
+
+      case SerfState.StateButchering:
+        writer.value('state.mode').write(this.s.butchering.mode);
+        break;
+
+      case SerfState.StateMakingWeapon:
+        writer.value('state.mode').write(this.s.makingWeapon.mode);
+        break;
+
+      case SerfState.StateMakingTool:
+        writer.value('state.mode').write(this.s.makingTool.mode);
+        break;
+
+      case SerfState.StateBuildingBoat:
+        writer.value('state.mode').write(this.s.buildingBoat.mode);
+        break;
+
+      case SerfState.StateKnightEngagingBuilding:
+      case SerfState.StateKnightPrepareAttacking:
+      case SerfState.StateKnightPrepareDefendingFreeWait:
+      case SerfState.StateKnightAttackingDefeatFree:
+      case SerfState.StateKnightAttacking:
+      case SerfState.StateKnightAttackingVictory:
+      case SerfState.StateKnightEngageAttackingFree:
+      case SerfState.StateKnightEngageAttackingFreeJoin:
+      case SerfState.StateKnightAttackingVictoryFree:
+        writer.value('state.move').write(this.s.attacking.move);
+        writer.value('state.attacker_won').write(this.s.attacking.attackerWon);
+        writer.value('state.field_D').write(this.s.attacking.fieldD);
+        writer.value('state.def_index').write(this.s.attacking.defIndex);
+        break;
+
+      case SerfState.StateKnightDefendingFree:
+      case SerfState.StateKnightEngageDefendingFree:
+        writer.value('state.dist_col').write(this.s.defendingFree.distCol);
+        writer.value('state.dist_row').write(this.s.defendingFree.distRow);
+        writer.value('state.field_D').write(this.s.defendingFree.fieldD);
+        writer.value('state.other_dist_col').write(this.s.defendingFree.otherDistCol);
+        writer.value('state.other_dist_row').write(this.s.defendingFree.otherDistRow);
+        break;
+
+      case SerfState.StateKnightLeaveForWalkToFight:
+        writer.value('state.dist_col').write(this.s.leaveForWalkToFight.distCol);
+        writer.value('state.dist_row').write(this.s.leaveForWalkToFight.distRow);
+        writer.value('state.field_D').write(this.s.leaveForWalkToFight.fieldD);
+        writer.value('state.field_E').write(this.s.leaveForWalkToFight.fieldE);
+        writer.value('state.next_state').write(this.s.leaveForWalkToFight.nextState);
+        break;
+
+      case SerfState.StateIdleOnPath:
+      case SerfState.StateWaitIdleOnPath:
+      case SerfState.StateWakeAtFlag:
+      case SerfState.StateWakeOnPath:
+        writer.value('state.rev_dir').write(this.s.idleOnPath.revDir);
+        writer.value('state.flag').write(this.s.idleOnPath.flag);
+        writer.value('state.field_E').write(this.s.idleOnPath.fieldE);
+        break;
+
+      case SerfState.StateDefendingHut:
+      case SerfState.StateDefendingTower:
+      case SerfState.StateDefendingFortress:
+      case SerfState.StateDefendingCastle:
+        writer.value('state.next_knight').write(this.s.defending.nextKnight);
+        break;
+
+      default: break;
+    }
+  }
 
   printState(): string {
     let res = '';

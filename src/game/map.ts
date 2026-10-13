@@ -73,9 +73,10 @@ import {
   reverseDirection,
 } from './map-geometry';
 import type { MapPos } from './map-geometry';
-import { BIT, BIT_TEST, ExceptionFreeserf, NOT_REACHED, u16, u32, u8 } from './misc';
+import { BIT, BIT_TEST, ExceptionFreeserf, i32, NOT_REACHED, u16, u32, u8 } from './misc';
 import type { Random } from './random';
 import type { MapGenerator } from './map-generator';
+import type { SaveReaderText, SaveWriterText } from './savegame';
 
 // map.h includes map-geometry.h, so everything declared there is visible
 // to modules that import './map'.
@@ -403,6 +404,8 @@ export function gameTileEquals(lhs: MapGameTile, rhs: MapGameTile): boolean {
     lhs.objIndex === rhs.objIndex
   );
 }
+
+const SAVE_MAP_TILE_SIZE = 16;
 
 // PORT: stand-ins for the C++ out parameters `int *col`, `int *row` of
 // Map::get_rnd_coord() and the in/out `MapPos *pos` of
@@ -1406,7 +1409,93 @@ export class Map {
     return true;
   }
 
-  // TODO(savegame)
+  // PORT: operator >> (SaveReaderBinary &reader, Map &map) is not ported.
+
+  // operator >> (SaveReaderText &reader, Map &map)
+  loadText(reader: SaveReaderText): void {
+    let x = 0;
+    let y = 0;
+    x = reader.value('pos').at(0).readInt();
+    y = reader.value('pos').at(1).readInt();
+    const pos = this.pos(x, y);
+
+    for (let y = 0; y < SAVE_MAP_TILE_SIZE; y++) {
+      for (let x = 0; x < SAVE_MAP_TILE_SIZE; x++) {
+        const p = this.posAdd(pos, this.pos(x, y));
+        const gameTile = this.gameTiles[p];
+        const landscapeTile = this.landscapeTiles[p];
+        let val: number;
+
+        val = reader.value('paths').at(y * SAVE_MAP_TILE_SIZE + x).readUint();
+        gameTile.paths = val & 0x3f;
+
+        val = reader.value('height').at(y * SAVE_MAP_TILE_SIZE + x).readUint();
+        landscapeTile.height = val & 0x1f;
+
+        val = reader.value('type.up').at(y * SAVE_MAP_TILE_SIZE + x).readUint();
+        landscapeTile.typeUp = val as MapTerrain;
+
+        val = reader.value('type.down').at(y * SAVE_MAP_TILE_SIZE + x).readUint();
+        landscapeTile.typeDown = val as MapTerrain;
+
+        try {
+          val = reader.value('idle_serf').at(y * SAVE_MAP_TILE_SIZE + x).readUint();
+          gameTile.idleSerf = (val !== 0);
+          val = reader.value('object').at(y * SAVE_MAP_TILE_SIZE + x).readUint();
+          landscapeTile.obj = val as MapObject;
+        } catch (e) {
+          val = reader.value('object').at(y * SAVE_MAP_TILE_SIZE + x).readUint();
+          landscapeTile.obj = (val & 0x7f) as MapObject;
+          gameTile.idleSerf = (BIT_TEST(val, 7) !== 0);
+        }
+
+        val = reader.value('serf').at(y * SAVE_MAP_TILE_SIZE + x).readUint();
+        gameTile.serf = val;
+
+        val = reader.value('resource.type').at(y * SAVE_MAP_TILE_SIZE + x).readUint();
+        landscapeTile.mineral = val as MapMinerals;
+
+        val = reader.value('resource.amount').at(y * SAVE_MAP_TILE_SIZE + x).readUint();
+        landscapeTile.resourceAmount = i32(val);
+      }
+    }
+  }
+
+  // operator << (SaveWriterText &writer, Map &map)
+  saveText(writer: SaveWriterText): void {
+    let i = 0;
+
+    for (let ty = 0; ty < this.getRows(); ty += SAVE_MAP_TILE_SIZE) {
+      for (let tx = 0; tx < this.getCols(); tx += SAVE_MAP_TILE_SIZE) {
+        const mapWriter = writer.addSection('map', i++);
+
+        mapWriter.value('pos').write(tx);
+        mapWriter.value('pos').write(ty);
+
+        for (let y = 0; y < SAVE_MAP_TILE_SIZE; y++) {
+          for (let x = 0; x < SAVE_MAP_TILE_SIZE; x++) {
+            const pos = this.pos(tx + x, ty + y);
+
+            mapWriter.value('height').write(this.getHeight(pos));
+            mapWriter.value('type.up').write(this.typeUp(pos));
+            mapWriter.value('type.down').write(this.typeDown(pos));
+            mapWriter.value('paths').write(this.paths(pos));
+            mapWriter.value('object').write(this.getObj(pos));
+            mapWriter.value('serf').write(this.getSerfIndex(pos));
+            mapWriter.value('idle_serf').write(this.getIdleSerf(pos));
+
+            if (this.isInWater(pos)) {
+              mapWriter.value('resource.type').write(0);
+              mapWriter.value('resource.amount').write(this.getResFish(pos));
+            } else {
+              mapWriter.value('resource.type').write(this.getResType(pos));
+              mapWriter.value('resource.amount').write(this.getResAmount(pos));
+            }
+          }
+        }
+      }
+    }
+  }
 
   posFromSavedValue(val: number): MapPos {
     val = u32(val) >>> 2;

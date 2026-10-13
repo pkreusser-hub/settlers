@@ -21,10 +21,11 @@
  * along with freeserf.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import type { Game } from './game';
+import { Game } from './game';
 import { GameInfo } from './mission';
 import type { PGameInfo } from './mission';
 import { Random } from './random';
+import { GameStore } from './savegame';
 
 type PGame = Game | null;
 
@@ -97,10 +98,29 @@ export class GameManager {
     return true;
   }
 
-  // TODO(savegame): load_game(path) reads the file through GameStore, makes
-  // the loaded game current and pauses it. Until savegames are ported this
-  // always fails.
-  loadGame(_path: string): boolean {
-    return false;
+  loadGame(path: string): boolean {
+    const newGame = new Game();
+    if (!GameStore.getInstance().load(path, newGame)) {
+      return false;
+    }
+
+    this.setCurrentGame(newGame);
+    newGame.pause();
+
+    return true;
+  }
+
+  // PORT: not in the C++. The game of an online match that goes on from a
+  // save game: both sides build it from the same text.
+  loadGameText(text: string): boolean {
+    const newGame = new Game();
+    if (!GameStore.getInstance().read(text, newGame)) {
+      return false;
+    }
+
+    this.setCurrentGame(newGame);
+    newGame.pause();
+
+    return true;
   }
 }

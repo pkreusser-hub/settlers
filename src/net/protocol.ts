@@ -5,7 +5,13 @@ import type { Command } from './command';
 
 // Bumped whenever the messages, the lockstep constants or the simulation
 // change in a way that two different builds could not play together.
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
+
+// A save game goes to the guest in parts of this many characters: the
+// channel carries each message as one piece and has a size limit.
+export const SAVE_PART_CHARS = 8192;
+// The largest save game a guest takes (the largest map is well below).
+export const SAVE_MAX_CHARS = 64 * 1024 * 1024;
 
 /* Lockstep constants. Both sides must use the same values; they are part of
    the protocol version. */
@@ -55,6 +61,10 @@ export type NetMessage =
   | { t: 'hello'; v: number }
   // Host to guest: build this game.
   | { t: 'start'; v: number; setup: GameSetup }
+  // Host to guest: part i of the n parts of a save game, in order.
+  | { t: 'save'; i: number; n: number; data: string }
+  // Host to guest: build the game from the save game that was sent.
+  | { t: 'startSave'; v: number }
   // Guest to host: the game is built, start the clock.
   | { t: 'ready' }
   // The sender's commands for one turn; sent for every turn, also empty.

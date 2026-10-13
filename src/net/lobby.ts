@@ -3,18 +3,19 @@
 // game once it has begun: it owns the session, installs it as command sink
 // and game clock, and shows the status line over the game.
 
-import type { Game } from '../game/game';
+import { Game } from '../game/game';
 import { GameManager } from '../game/game-manager';
 import type { GameManagerHandler } from '../game/game-manager';
 import type { PGameInfo } from '../game/mission';
 import { Random } from '../game/random';
+import { GameStore } from '../game/savegame';
 import { setOnlineHost } from '../ui/game-init';
 import type { Interface } from '../ui/interface';
 import '../ui/overlay.css';
 import { setCommandSink, setGameClock, setLocalPlayer } from './command';
 import { hostRoom, joinRoom, normalizeRoomCode, ROOM_CODE_LENGTH } from './peer-transport';
 import type { NetError, PendingConnection } from './peer-transport';
-import { PROTOCOL_VERSION } from './protocol';
+import { PROTOCOL_VERSION, SAVE_MAX_CHARS, SAVE_PART_CHARS } from './protocol';
 
 const SOURCE_URL = 'https://github.com/pkreusser-hub/settlers';
 import type { GameSetup, NetMessage, Transport } from './protocol';
@@ -234,7 +235,7 @@ export class Lobby implements GameManagerHandler {
     this.setScreen(
       element('h1', 'ov-title', 'Host online game'),
       element('p', 'ov-text',
-        'The other player is connected. Choose the map and the computer players, then start. ' +
+        'The other player is connected. Choose the map and the computer players, or switch the game type to a saved game, then start. ' +
         'You are player 1, the other player is player 2.'),
       buttons,
     );
@@ -251,6 +252,7 @@ export class Lobby implements GameManagerHandler {
 
     setOnlineHost({
       start: (mission) => this.hostStart(mission),
+      startSaved: (path) => this.hostStartSaved(path),
       cancel: () => {
         this.dropConnection();
         this.reopenGameInit();
@@ -278,6 +280,34 @@ export class Lobby implements GameManagerHandler {
 
     transport.send({ t: 'start', v: PROTOCOL_VERSION, setup });
 
+    this.hostWaitReady(game, transport);
+    return true;
+  }
+
+  /* Go on from a saved game: the guest gets the text of the file and
+     builds the same game from it. */
+  protected hostStartSaved(path: string): boolean {
+    const transport = this.transport;
+    if (transport === null) return false;
+
+    const text = GameStore.getInstance().getText(path);
+    if (text === null) return false;
+    const game = this.buildSavedGame(text, 0);
+    if (game === null) return false;
+    setOnlineHost(null);
+
+    const n = Math.ceil(text.length / SAVE_PART_CHARS);
+    for (let i = 0; i < n; i++) {
+      const data = text.substring(i * SAVE_PART_CHARS, (i + 1) * SAVE_PART_CHARS);
+      transport.send({ t: 'save', i, n, data });
+    }
+    transport.send({ t: 'startSave', v: PROTOCOL_VERSION });
+
+    this.hostWaitReady(game, transport);
+    return true;
+  }
+
+  protected hostWaitReady(game: Game, transport: Transport): void {
     const session = this.installSession(game, 0, transport);
     this.showHud('Waiting for the other player…');
     /* The clock starts when the guest has built the game. */
@@ -293,7 +323,6 @@ export class Lobby implements GameManagerHandler {
       /* The session has taken the channel over: tell it. */
       transport.onClose?.();
     };
-    return true;
   }
 
   // -------------------------------------------------------------------------
@@ -373,7 +402,33 @@ export class Lobby implements GameManagerHandler {
       this.dropConnection();
       this.showJoin(TEXT.hostLeft, code);
     };
+    const parts: string[] = [];
+    let chars = 0;
     transport.onMessage = (msg: NetMessage) => {
+      if (msg.t === 'save') {
+        /* The parts of a save game, in order. */
+        if (typeof msg.data !== 'string' || msg.i !== parts.length ||
+            chars + msg.data.length > SAVE_MAX_CHARS) {
+          this.dropConnection();
+          this.showJoin(TEXT.badStart, code);
+          return;
+        }
+        parts.push(msg.data);
+        chars += msg.data.length;
+        return;
+      }
+      if (msg.t === 'startSave') {
+        if (msg.v !== PROTOCOL_VERSION) {
+          this.dropConnection();
+          this.showJoin(TEXT.version, code);
+          return;
+        }
+        if (!this.guestBegin(this.buildSavedGame(parts.join(''), 1))) {
+          this.dropConnection();
+          this.showJoin(TEXT.badStart, code);
+        }
+        return;
+      }
       if (msg.t !== 'start') return;
       if (msg.v !== PROTOCOL_VERSION) {
         this.dropConnection();
@@ -405,8 +460,12 @@ export class Lobby implements GameManagerHandler {
     const transport = this.transport;
     if (transport === null || !isValidSetup(setup)) return false;
 
-    const game = this.buildGame(setup, 1);
-    if (game === null) return false;
+    return this.guestBegin(this.buildGame(setup, 1));
+  }
+
+  protected guestBegin(game: Game | null): boolean {
+    const transport = this.transport;
+    if (transport === null || game === null) return false;
 
     /* The guest never sees the game init box. */
     this.iface.closeGameInit();
@@ -481,6 +540,31 @@ export class Lobby implements GameManagerHandler {
       return null;
     }
     return manager.getCurrentGame();
+  }
+
+  /* The same for a game that goes on from a save game. Whoever played
+     them before, players 0 and 1 are now the host and the guest. */
+  protected buildSavedGame(text: string, localPlayer: number): Game | null {
+    const check = new Game();
+    if (!GameStore.getInstance().read(text, check)) return null;
+    const host = check.getPlayer(0);
+    const guest = check.getPlayer(1);
+    if (host === null || guest === null || !host.isInGame() || !guest.isInGame()) {
+      console.error('[net] the save game has no two players');
+      return null;
+    }
+
+    setLocalPlayer(localPlayer);
+    const manager = GameManager.getInstance();
+    if (!manager.loadGameText(text)) {
+      setLocalPlayer(0);
+      return null;
+    }
+    const game = manager.getCurrentGame();
+    if (game === null) return null;
+    game.getPlayer(0)!.setHuman();
+    game.getPlayer(1)!.setHuman();
+    return game;
   }
 
   protected installSession(game: Game, localPlayer: number, transport: Transport): LockstepSession {

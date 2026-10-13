@@ -25,6 +25,7 @@ import { GameManager } from './game/game-manager';
 // Registers the handlers of the player commands.
 import './net/commands';
 import { Log } from './game/misc';
+import { GameStore } from './game/savegame';
 import { Audio, AudioTypeMidi } from './ui/audio';
 import { openLobby } from './net/lobby';
 import { loadGameData } from './ui/data-picker';
@@ -70,6 +71,9 @@ async function main(): Promise<boolean> {
   // when /data/SPAE.PA can not be fetched, the player is asked for their
   // own copy (kept in this browser), and the game goes on once it is read.
   await loadGameData(import.meta.env.BASE_URL + 'data/SPAE.PA');
+
+  // PORT: the saved games of this browser, read before the first list.
+  await GameStore.getInstance().init();
 
   Log.Info('main', 'Initialize graphics...');
 
@@ -119,7 +123,7 @@ async function main(): Promise<boolean> {
   iface.openGameInit();
 
   // PORT: page controls for speed and zoom, not in the C++.
-  new Hud(gameManager);
+  new Hud(gameManager, iface);
 
   // PORT: not in the C++. The lobby lies over the game: a solo game goes on
   // as above, an online game replaces the current game when it starts.

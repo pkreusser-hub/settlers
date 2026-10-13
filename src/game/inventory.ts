@@ -28,6 +28,7 @@ import { SerfType } from './serf';
 import type { Serf } from './serf';
 import type { Flag } from './flag';
 import type { Game } from './game';
+import type { SaveReaderText, SaveWriterText } from './savegame';
 
 // PORT: Serf::SerfMap (std::map<Serf::Type, unsigned int>). Declared here
 // structurally so this module does not depend on how serf.ts spells it.
@@ -524,7 +525,60 @@ export class Inventory extends GameObject {
     this.serfIdleInStock(serf);
   }
 
-  // TODO(savegame)
+  // PORT: operator>> (SaveReaderBinary) is not ported (the binary reader
+  // SaveReaderBinary is not ported).
+
+  // PORT: operator>> (SaveReaderText &reader, Inventory &inventory).
+  loadText(reader: SaveReaderText): void {
+    this.owner = reader.value('player').readUint();
+    let modes = 0;
+    modes = reader.value('res_dir').readUint();
+    this.resourceMode = (modes & 3) as InventoryMode;
+    this.serfMode = ((modes >>> 2) & 3) as InventoryMode;
+    this.flag = reader.value('flag').readUint();
+    this.building = reader.value('building').readUint();
+
+    for (let i = 0; i < 2; i++) {
+      this.outQueue[i].type = reader.value('queue.type').at(i).readInt();
+      this.outQueue[i].dest = reader.value('queue.dest').at(i).readUint();
+    }
+
+    this.genericCount = reader.value('generic_count').readInt();
+    if (reader.hasValue('serfs_out')) {
+      this.serfsOut = reader.value('serfs_out').readUint();
+    }
+
+    for (let i = 0; i < 26; i++) {
+      this.resources.set(i as ResourceType, reader.value('resources').at(i).readUint());
+      this.serfs.set(i as SerfType, reader.value('serfs').at(i).readUint());
+    }
+    this.serfs.set(26 as SerfType, reader.value('serfs').at(26).readUint());
+  }
+
+  // PORT: operator<< (SaveWriterText &writer, Inventory &inventory).
+  // PORT: the C++ reads the maps with operator[], which adds the missing
+  // keys with a count of 0. Here the maps are left as they are (as res()
+  // does) and a missing key is written as 0.
+  saveText(writer: SaveWriterText): void {
+    writer.value('player').writeUint(this.owner);
+    writer.value('res_dir').write(this.resourceMode | (this.serfMode << 2));
+    writer.value('flag').writeUint(this.flag);
+    writer.value('building').writeUint(this.building);
+
+    for (let i = 0; i < 2; i++) {
+      writer.value('queue.type').write(this.outQueue[i].type);
+      writer.value('queue.dest').writeUint(this.outQueue[i].dest);
+    }
+
+    writer.value('generic_count').write(this.genericCount);
+    writer.value('serfs_out').writeUint(this.serfsOut);
+
+    for (let i = 0; i < 26; i++) {
+      writer.value('resources').writeUint(this.resources.get(i as ResourceType) ?? 0);
+      writer.value('serfs').writeUint(this.serfs.get(i as SerfType) ?? 0);
+    }
+    writer.value('serfs').writeUint(this.serfs.get(26 as SerfType) ?? 0);
+  }
 }
 
 export const resNeeded: ResourceType[] = [

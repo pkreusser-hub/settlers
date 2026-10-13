@@ -56,9 +56,21 @@ carriers and office networks) the connection fails; there is no relay server.
 
 `CLAUDE.md` records the rules the port follows, for anyone continuing it.
 
+## Save and load
+
+Save in the top bar stores the game in this browser under the date and time;
+Load lists the saved games. The options box of the game saves under a name
+of your choice. To go on with an online game, the host picks "Host online
+game", switches the game type in the setup box to the saved games and starts
+one: the other player receives the file. Players 1 and 2 of the saved game
+are the host and the guest.
+
+The file is Freeserf's text format, with two more values (the game speed and
+the tick counter).
+
 ## Not done
 
-Save and load are not ported. Most dialogs have had little testing. The music
+Save games of the original DOS game cannot be read. Most dialogs have had little testing. The music
 plays through a simple built-in synthesizer, not the original AdLib sound.
 
 ## Licence

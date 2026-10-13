@@ -21,6 +21,7 @@
  * along with freeserf.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+import { GameStore } from '../game/savegame';
 import { Color, Frame } from './gfx';
 import { GuiObject } from './gui';
 
@@ -36,8 +37,7 @@ export class ListSavedFiles extends GuiObject {
   protected colorText: Color;
   protected colorBackground: Color;
 
-  // TODO(savegame): `GameStore *save_game` (&GameStore::get_instance()) is
-  // left out, the list of saved games is always empty.
+  protected saveGame: GameStore;
   protected items: ListSavedFilesSaveInfo[];
   protected firstVisibleItem: number;
   protected selectedItem: number;
@@ -50,10 +50,19 @@ export class ListSavedFiles extends GuiObject {
     this.colorText = Color.green;
     this.colorBackground = Color.black;
 
-    // TODO(savegame): items = save_game->get_saved_games();
-    this.items = [];
+    this.saveGame = GameStore.getInstance();
+    this.items = this.saveGame.getSavedGames();
     this.firstVisibleItem = 0;
     this.selectedItem = -1;
+  }
+
+  // PORT: not in the C++, where the list is read once. Read the saved
+  // games again, a game may have been saved since.
+  update(): void {
+    this.items = this.saveGame.getSavedGames();
+    this.firstVisibleItem = 0;
+    this.selectedItem = -1;
+    this.setRedraw();
   }
 
   setSelectionHandler(handler: ((item: string) => void) | null): void {
@@ -61,7 +70,8 @@ export class ListSavedFiles extends GuiObject {
   }
 
   getSelected(): string {
-    if (this.items.length === 0) {
+    // PORT: the C++ reads items[-1] when nothing is selected.
+    if (this.items.length === 0 || this.selectedItem < 0) {
       return '';
     }
     const filePath = this.items[this.selectedItem].path;
@@ -69,8 +79,7 @@ export class ListSavedFiles extends GuiObject {
   }
 
   getFolderPath(): string {
-    // TODO(savegame): return save_game->get_folder_path();
-    return '';
+    return this.saveGame.getFolderPath();
   }
 
   protected internalDraw(): void {

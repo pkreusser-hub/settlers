@@ -21,7 +21,7 @@
  * along with freeserf.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { GAME_MAX_PLAYER_COUNT } from '../game/game';
+import { Game, GAME_MAX_PLAYER_COUNT } from '../game/game';
 import { GameManager } from '../game/game-manager';
 import { Map, MapGeometry } from '../game/map';
 import type { PMap } from '../game/map';
@@ -34,6 +34,7 @@ import { clamp } from '../game/misc';
 import { GameInfo } from '../game/mission';
 import type { PGameInfo, PPlayerInfo } from '../game/mission';
 import { Random } from '../game/random';
+import { GameStore } from '../game/savegame';
 import { drawBoxFrame } from './box-frame';
 import { Data } from './data-instance';
 import { Color, Frame } from './gfx';
@@ -123,6 +124,8 @@ class RandomInput extends TextInput {
 // returns false to keep the box open; cancel() is the exit button.
 export interface OnlineHostHooks {
   start(mission: PGameInfo): boolean;
+  /* Go on from the save game of this path. */
+  startSaved(path: string): boolean;
   cancel(): void;
 }
 
@@ -224,10 +227,11 @@ export class GameInitBox extends GuiObject {
     this.fileList.setSize(160, 160);
     this.fileList.setDisplayed(false);
     this.fileList.setSelectionHandler((item: string) => {
-      // TODO(savegame): load the saved game `item` into a new Game with
-      // GameStore::get_instance().load(item, &game) and show its map:
-      //   this.map = game.getMap();
-      //   this.minimap.setMap(this.map);
+      const game = new Game();
+      if (GameStore.getInstance().load(item, game)) {
+        this.map = game.getMap();
+        this.minimap.setMap(this.map);
+      }
     });
     this.addFloat(this.fileList, 20, 55);
   }
@@ -410,11 +414,28 @@ export class GameInitBox extends GuiObject {
     }
   }
 
+  // PORT: not in the C++. Show the list of the saved games at once.
+  showLoad(): void {
+    if (this.online !== null) {
+      return;
+    }
+    this.gameType = GameLoad;
+    this.randomInput.setDisplayed(false);
+    this.fileList.update();
+    this.fileList.setDisplayed(true);
+    this.setRedraw();
+  }
+
   protected handleAction(action: number): void {
     switch (action) {
       case ActionStartGame: {
         if (this.online !== null) {
-          if (!this.online.start(this.mission)) {
+          if (this.gameType === GameLoad) {
+            const path = this.fileList.getSelected();
+            if (path.length === 0 || !this.online.startSaved(path)) {
+              return;
+            }
+          } else if (!this.online.start(this.mission)) {
             return;
           }
           /* Closing deletes this box. */
@@ -423,7 +444,7 @@ export class GameInitBox extends GuiObject {
         }
         if (this.gameType === GameLoad) {
           const path = this.fileList.getSelected();
-          if (!GameManager.getInstance().loadGame(path)) {
+          if (path.length === 0 || !GameManager.getInstance().loadGame(path)) {
             return;
           }
         } else {
@@ -443,8 +464,8 @@ export class GameInitBox extends GuiObject {
       }
       case ActionToggleGameType:
         if (this.online !== null) {
-          /* Missions, tutorials and saved games are for one player. */
-          break;
+          /* Missions and tutorials are for one player. */
+          this.gameType = this.gameType === GameCustom ? GameLoad - 1 : GameLoad;
         }
         this.gameType++;
         if (this.gameType > GameLoad) {
@@ -475,6 +496,7 @@ export class GameInitBox extends GuiObject {
           }
           case GameLoad: {
             this.randomInput.setDisplayed(false);
+            this.fileList.update();
             this.fileList.setDisplayed(true);
             break;
           }

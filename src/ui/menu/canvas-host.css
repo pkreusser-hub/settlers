@@ -1,0 +1,16 @@
+/* The canvas of canvas-host.ts: a picture drawn by an object of the game
+   inside a window of the page. Not part of Freeserf. */
+
+.gx .cvh-canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+  background: var(--gx-bg-deep);
+  border: 1px solid var(--gx-line);
+  cursor: crosshair;
+  /* The drags are the object's, not the page's. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}

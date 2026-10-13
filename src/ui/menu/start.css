@@ -1,0 +1,507 @@
+/* The start screen (start.ts, classes so-) and the game setup window in it
+   (setup.ts, classes su-). The windows are the windows of the kit (kit.css);
+   the colours are the variables of theme.css. Not part of Freeserf. */
+
+/* ---- The screen ---- */
+
+.gx.so-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  box-sizing: border-box;
+  padding: 12px;
+  overflow: auto;
+  font-size: calc(15px * var(--overlay-scale, 1));
+  line-height: 1.4;
+  background: var(--gx-backdrop);
+}
+
+.gx.so-backdrop[hidden] {
+  display: none;
+}
+
+/* A window of the kit as a page of the screen: in the flow, in the middle,
+   not to be dragged. */
+.so-backdrop > .mk-win.so-win {
+  position: relative;
+  left: auto;
+  top: auto;
+  transform: none;
+  z-index: auto;
+  margin: auto;
+  max-width: 100%;
+  max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
+}
+
+.so-win[data-size='wide'] {
+  width: 54em;
+}
+
+.so-win .mk-head {
+  cursor: default;
+}
+
+.so-win[inert] {
+  opacity: 0.5;
+}
+
+/* A box of the game that opens while the start screen is shown (the
+   options) lies over it. */
+body.so-open > .mk-win {
+  z-index: 12;
+}
+
+/* ---- Text ---- */
+
+.so-text {
+  margin: 0 0 0.7em;
+  color: var(--gx-text-dim);
+}
+
+.so-small {
+  margin: 0.9em 0 0;
+  font-size: 0.87em;
+  color: var(--gx-text-faint);
+}
+
+.so-small a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.so-status,
+.so-error {
+  margin: 0.6em 0 0;
+  min-height: 1.4em;
+  color: var(--gx-text-dim);
+}
+
+.so-error {
+  color: var(--gx-bad);
+}
+
+.so-error:not(:empty)::before {
+  content: 'Problem: ';
+  font-weight: 600;
+}
+
+.so-status:empty,
+.so-error:empty {
+  display: none;
+}
+
+.mk-foot > .so-error,
+.mk-foot > .so-status {
+  flex: 1 1 100%;
+  margin: 0;
+}
+
+/* ---- The opening menu ---- */
+
+.so-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+}
+
+.gx .so-item {
+  justify-content: flex-start;
+  gap: 0.7em;
+  width: 100%;
+  min-height: 3.2em;
+  padding: 0.3em 0.7em;
+  text-align: left;
+}
+
+.so-item-pic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 2.6em;
+}
+
+.so-item-words {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.so-item-label {
+  font-weight: 600;
+  color: var(--gx-text-strong);
+}
+
+.so-item-text {
+  font-size: 0.9em;
+  color: var(--gx-text-dim);
+}
+
+/* ---- Text field ---- */
+
+.so-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+  margin: 0.4em 0;
+}
+
+.so-label {
+  font-size: 0.92em;
+  color: var(--gx-text-dim);
+}
+
+.gx .so-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2.4em;
+  padding: 0.3em 0.6em;
+  font: inherit;
+  color: var(--gx-text-strong);
+  background: var(--gx-bg-deep);
+  border: 1px solid var(--gx-line);
+  border-radius: var(--gx-radius-s);
+}
+
+.gx .so-input-code {
+  font-family: var(--gx-mono);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+}
+
+.gx .so-input-room {
+  font-size: 1.5em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+/* The code of a room, large. */
+.so-code {
+  margin: 0.3em 0;
+  padding: 0.3em 0.2em;
+  font: 600 2.3em/1.1 var(--gx-mono);
+  letter-spacing: 0.18em;
+  text-align: center;
+  color: var(--gx-title);
+  background: var(--gx-bg-deep);
+  border: 1px solid var(--gx-line);
+  border-radius: var(--gx-radius-s);
+  overflow-wrap: anywhere;
+  user-select: all;
+  -webkit-user-select: all;
+}
+
+.so-roster {
+  margin: 0.5em 0;
+  padding: 0;
+  list-style: none;
+}
+
+.so-roster li {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  min-height: 2em;
+  padding: 0.15em 0;
+  border-top: 1px solid var(--gx-line-soft);
+}
+
+.so-roster li:first-child {
+  border-top: 0;
+}
+
+.so-roster canvas {
+  height: 2.2em !important;
+  width: auto !important;
+}
+
+/* ---- List box ---- */
+
+.so-list {
+  margin: 0;
+  padding: 0;
+  max-height: 14em;
+  overflow: auto;
+  list-style: none;
+  background: var(--gx-bg-deep);
+  border: 1px solid var(--gx-line);
+  border-radius: var(--gx-radius-s);
+}
+
+.so-option {
+  display: grid;
+  grid-template-columns: 1.2em minmax(0, 1fr);
+  gap: 0 0.3em;
+  padding: 0.3em 0.5em;
+  cursor: pointer;
+}
+
+.so-option + .so-option {
+  border-top: 1px solid var(--gx-line-soft);
+}
+
+.so-option:hover {
+  background: var(--gx-bg-raised);
+}
+
+.so-option-label {
+  color: var(--gx-text-strong);
+}
+
+.so-option-detail {
+  grid-column: 2;
+  font-size: 0.88em;
+  color: var(--gx-text-dim);
+}
+
+/* The choice: a mark and a bar, not only the colour. */
+.so-option[aria-selected='true'] {
+  background: var(--gx-btn);
+  box-shadow: inset 0.25em 0 0 var(--gx-accent);
+}
+
+.so-option[aria-selected='true'] .so-option-mark::before {
+  content: '\25B6';
+  font-size: 0.8em;
+  color: var(--gx-accent);
+}
+
+.so-option[aria-selected='true'] .so-option-label {
+  font-weight: 600;
+}
+
+.so-option:focus-visible {
+  outline-offset: -2px !important;
+}
+
+/* ---- The end of a game, the orders of a tutorial ---- */
+
+.so-end-pictures {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5em;
+  margin-bottom: 0.6em;
+}
+
+.so-end-pictures canvas {
+  max-width: 100%;
+  height: auto !important;
+}
+
+.so-end-result {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+}
+
+.so-end-words p {
+  margin: 0 0 0.3em;
+}
+
+.so-end-winner {
+  font-weight: 600;
+  color: var(--gx-text-strong);
+}
+
+.so-orders {
+  margin: 0;
+  color: var(--gx-text-strong);
+}
+
+/* ---- The game setup ---- */
+
+.su-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(10em, 17em);
+  gap: 0.4em 1.2em;
+  align-items: start;
+}
+
+.su-top > .mk-section {
+  margin-top: 0;
+}
+
+.su-size-text,
+.su-about {
+  margin: 0.3em 0 0.5em;
+  color: var(--gx-text-dim);
+}
+
+.su-seed-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4em;
+}
+
+.gx .su-seed {
+  max-width: 17em;
+}
+
+.su-seed-state {
+  margin-top: 0.2em;
+  font-size: 0.92em;
+}
+
+.su-preview {
+  margin: 0;
+}
+
+.su-preview-map {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--gx-bg-deep);
+  border: 1px solid var(--gx-line);
+  image-rendering: pixelated;
+}
+
+.su-preview-caption {
+  margin-top: 0.3em;
+  font-size: 0.88em;
+  color: var(--gx-text-dim);
+}
+
+.su-pick {
+  max-height: 16em;
+}
+
+.su-help {
+  margin: 0 0 0.6em;
+  padding-left: 1.2em;
+  font-size: 0.9em;
+  color: var(--gx-text-dim);
+}
+
+.su-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11.5em, 1fr));
+  gap: 0.6em;
+}
+
+.su-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+  min-width: 0;
+  padding: 0.5em;
+  background: var(--gx-bg-deep);
+  border: 1px solid var(--gx-line);
+  border-radius: var(--gx-radius-s);
+}
+
+.su-slot-empty {
+  border-style: dashed;
+}
+
+.su-slot-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+}
+
+.su-slot-head canvas {
+  height: 4.4em !important;
+  width: auto !important;
+}
+
+.su-slot-who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.su-slot-name {
+  font-weight: 600;
+  color: var(--gx-text-strong);
+  overflow-wrap: anywhere;
+}
+
+.su-slot-role {
+  font-size: 0.88em;
+  color: var(--gx-text-dim);
+}
+
+.su-slot-text {
+  margin: 0;
+  font-size: 0.88em;
+  color: var(--gx-text-dim);
+}
+
+.su-face {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2em;
+}
+
+.su-face-label {
+  font-size: 0.88em;
+  color: var(--gx-text-dim);
+}
+
+.gx .su-select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2.2em;
+  padding: 0.2em 0.4em;
+  font: inherit;
+  color: var(--gx-text-strong);
+  background: var(--gx-btn);
+  border: 1px solid var(--gx-line);
+  border-radius: var(--gx-radius-s);
+}
+
+.su-values .mk-row {
+  min-height: 0;
+  gap: 0 0.5em;
+}
+
+.su-values .mk-label {
+  flex-basis: 100%;
+  font-size: 0.9em;
+}
+
+.su-values .mk-side {
+  flex: 1 1 100%;
+}
+
+.su-values .mk-value {
+  min-width: 0;
+  font-size: 0.88em;
+  white-space: nowrap;
+}
+
+.su-values .mk-meter-bar {
+  flex: 1;
+  width: auto;
+}
+
+.su-values .mk-range:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+@media (max-width: 640px) {
+  .gx.so-backdrop {
+    padding: 6px;
+  }
+
+  .so-backdrop > .mk-win.so-win {
+    max-height: calc(100vh - 12px);
+    max-height: calc(100dvh - 12px);
+  }
+
+  .su-top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .su-preview {
+    max-width: 16em;
+  }
+
+  .so-code {
+    font-size: 1.8em;
+  }
+}

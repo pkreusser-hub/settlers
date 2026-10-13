@@ -1,17 +1,23 @@
-// The lobby: the page overlay shown at startup with the choice between a
-// solo game, hosting an online game and joining one. It also runs an online
-// game once it has begun: it owns the session, installs it as command sink
-// and game clock, keeps the host's room open for guests that come back,
-// and shows the status line and the chat over the game.
+// The lobby: the online part of the start screen of the page
+// (ui/menu/start.ts), which it makes and in which it shows its pages: the
+// room of a host, the code field of a guest. It also runs an online game
+// once it has begun: it owns the session, installs it as command sink and
+// game clock, keeps the host's room open for guests that come back, and
+// shows the status line and the chat over the game.
 
 import { Game } from '../game/game';
 import { GameManager } from '../game/game-manager';
 import type { GameManagerHandler } from '../game/game-manager';
+import { defColor } from '../game/mission';
 import type { PGameInfo } from '../game/mission';
 import { Random } from '../game/random';
 import { GameStore } from '../game/savegame';
 import { setOnlineHost } from '../ui/game-init';
+import type { OnlineHostHooks } from '../ui/game-init';
 import type { Interface } from '../ui/interface';
+import type { SetupHandle } from '../ui/menu/setup';
+import { messageLine, para, StartScreen, textField } from '../ui/menu/start';
+import { button as menuButton, el, faceCanvas } from '../ui/menu/widgets';
 import '../ui/overlay.css';
 import { Chat } from './chat';
 import { setCommandSink, setGameClock, setLocalPlayer } from './command';
@@ -50,6 +56,7 @@ const TEXT = {
   setup: 'The host is already setting up the game. Ask the host to cancel the setup, then join again.',
   badStart: 'The host sent a game this version cannot build. Both reload the page, then try again.',
   fewPlayers: 'This saved game has fewer players than are here. Choose another one.',
+  playerLeft: 'A player left. Set up the game again.',
 };
 
 function netErrorText(error: NetError, code: string): string {
@@ -125,8 +132,11 @@ interface JoinUi {
 
 export class Lobby implements GameManagerHandler {
   protected iface: Interface;
-  protected backdrop: HTMLDivElement;
-  protected panel: HTMLDivElement;
+  /* The start screen: the opening menu, the game setup and the pages of
+     the lobby. */
+  protected screen: StartScreen;
+  /* The setup window of the host, while it is shown. */
+  protected setup: SetupHandle | null = null;
   protected hud: HTMLDivElement;
   protected hudTimer: ReturnType<typeof setTimeout> | null = null;
   protected chat: Chat;
@@ -149,34 +159,16 @@ export class Lobby implements GameManagerHandler {
   protected rebuilding = false;
   protected hintShown = false;
 
-  protected blockKeys = (event: KeyboardEvent): void => {
-    /* While the lobby is open the keys are not for the game behind it. */
-    if (!this.backdrop.hidden && !this.backdrop.contains(event.target as Node)) {
-      event.stopImmediatePropagation();
-    }
-  };
-
   constructor(iface: Interface) {
     this.iface = iface;
-
-    this.backdrop = element('div', 'ov-backdrop');
-    this.backdrop.id = 'lobby';
-    this.panel = element('div', 'ov-panel');
-    this.panel.setAttribute('role', 'dialog');
-    this.panel.setAttribute('aria-label', 'The Settlers');
-    this.backdrop.append(this.panel);
-    /* Keys typed in the lobby stay in the lobby. */
-    this.backdrop.addEventListener('keydown', (e) => e.stopPropagation());
-    this.backdrop.addEventListener('keyup', (e) => e.stopPropagation());
 
     this.hud = element('div', 'ov-hud');
     this.hud.id = 'net-status';
     this.hud.setAttribute('role', 'status');
     this.hud.hidden = true;
 
-    document.body.append(this.backdrop, this.hud);
-    window.addEventListener('keydown', this.blockKeys, true);
-    this.chat = new Chat(iface, () => !this.backdrop.hidden);
+    document.body.append(this.hud);
+    this.chat = new Chat(iface, () => this.screen.isOpen());
     /* Leaving the page closes the channels, so that the others see it at
        once and not only after the silence limit. */
     window.addEventListener('pagehide', (event) => {
@@ -187,54 +179,30 @@ export class Lobby implements GameManagerHandler {
     });
     GameManager.getInstance().addHandler(this);
 
-    this.showMenu();
+    /* Shows the opening menu. */
+    this.screen = new StartScreen(iface, GameManager.getInstance(), {
+      host: () => this.startHosting(),
+      join: () => this.showJoin(),
+      rejoin: (code) => this.showJoin('', code, true),
+      /* This tab was in an online game (it was reloaded, or lost the
+         host). */
+      rejoinCode: () => {
+        const last = stored(ROOM_KEY);
+        return last !== null && normalizeRoomCode(last) === last ? last : null;
+      },
+    });
   }
 
   // -------------------------------------------------------------------------
   // Screens
 
-  protected setScreen(...children: HTMLElement[]): void {
-    this.panel.replaceChildren(...children);
-    this.backdrop.hidden = false;
-    const focus = this.panel.querySelector<HTMLElement>('input, button:not(:disabled)');
-    focus?.focus();
-  }
-
   protected hide(): void {
-    this.backdrop.hidden = true;
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
-    }
+    this.screen.hide();
   }
 
   protected showMenu(error = ''): void {
-    const buttons = element('div', 'ov-buttons');
-    buttons.append(
-      button('Play solo', () => this.hide()),
-      button('Host online game', () => this.startHosting()),
-      button('Join online game', () => this.showJoin()),
-    );
-    /* This tab was in an online game (it was reloaded, or lost the host). */
-    const last = stored(ROOM_KEY);
-    if (last !== null && normalizeRoomCode(last) === last) {
-      buttons.append(button(`Rejoin game ${last}`, () => this.showJoin('', last, true), true));
-    }
-    const message = element('p', 'ov-error', error);
-    message.setAttribute('role', 'alert');
-    const source = element('p', 'ov-small', 'A port of Freeserf, under the GPL. ');
-    const link = document.createElement('a');
-    link.href = SOURCE_URL;
-    link.target = '_blank';
-    link.rel = 'noopener';
-    link.textContent = 'Source code';
-    source.append(link);
-    this.setScreen(
-      element('h1', 'ov-title', 'The Settlers'),
-      element('p', 'ov-text', 'Play alone, or with up to three other players over the internet.'),
-      buttons,
-      message,
-      source,
-    );
+    this.setup = null;
+    this.screen.showMenu(error);
   }
 
   // -------------------------------------------------------------------------
@@ -260,73 +228,93 @@ export class Lobby implements GameManagerHandler {
 
   /* The room before the game: the code and who has joined. */
   protected showHostRoom(note = ''): void {
-    const status = element('p', 'ov-status');
-    status.setAttribute('role', 'status');
-    const codeBox = element('div', 'ov-code', '······');
-    codeBox.setAttribute('aria-label', 'Room code');
-    const list = element('p', 'ov-text');
-    const message = element('p', 'ov-error', note);
-    message.setAttribute('role', 'alert');
-
-    const copy = button('Copy code', () => {
-      const code = this.roomCode;
-      const done = (): void => {
-        copy.textContent = 'Copied';
-        setTimeout(() => { copy.textContent = 'Copy code'; }, 2000);
-      };
-      const select = (): void => {
-        /* No clipboard access: select the code for a manual copy. */
-        const range = document.createRange();
-        range.selectNodeContents(codeBox);
-        const selection = window.getSelection();
-        selection?.removeAllRanges();
-        selection?.addRange(range);
-      };
-      if (navigator.clipboard !== undefined) {
-        navigator.clipboard.writeText(code).then(done, select);
-      } else {
-        select();
-      }
-    });
-    const setup = button('Set up the game', () => this.showHostSetup());
-    const buttons = element('div', 'ov-buttons');
-    buttons.append(copy, setup, button('Cancel', () => {
+    this.setup = null;
+    const cancel = (): void => {
       this.closeRoom();
       this.showMenu();
-    }, true));
-
-    this.refreshRoom = () => {
-      if (this.phase !== 'room') return;
-      const count = this.guests.length;
-      codeBox.textContent = this.roomCode !== '' ? this.roomCode : '······';
-      copy.disabled = this.roomCode === '';
-      setup.disabled = count === 0;
-      if (this.roomCode === '') {
-        status.textContent = 'Opening a room…';
-      } else if (count === 0) {
-        status.textContent = 'Waiting for players…';
-      } else if (count < MAX_HUMANS - 1) {
-        status.textContent = 'Start when everyone is here.';
-      } else {
-        status.textContent = 'The game is full.';
-      }
-      const joined = this.guests.map((_, i) => `Player ${i + 2} joined.`).join(' ');
-      list.textContent = `You are player 1. ${joined}`;
-      this.guests.forEach((guest, i) => {
-        guest.transport.send({ t: 'lobby', you: i + 1, count: count + 1 });
-      });
     };
+    this.screen.show({
+      title: 'Host online game',
+      back: cancel,
+      build: (win) => {
+        const status = messageLine('status');
+        const codeBox = el('div', 'so-code', '······');
+        codeBox.setAttribute('aria-label', 'Room code');
+        const roster = el('ul', 'so-roster');
+        roster.setAttribute('aria-label', 'Players in the room');
+        const message = messageLine('error', note);
 
-    this.setScreen(
-      element('h1', 'ov-title', 'Host online game'),
-      element('p', 'ov-text', 'Give this code to the other players. Up to three can join.'),
-      codeBox,
-      list,
-      status,
-      message,
-      buttons,
-    );
-    this.refreshRoom();
+        const copy = menuButton('Copy code', () => {
+          const code = this.roomCode;
+          const label = copy.querySelector('span') ?? copy;
+          const done = (): void => {
+            label.textContent = 'Copied';
+            setTimeout(() => { label.textContent = 'Copy code'; }, 2000);
+          };
+          const select = (): void => {
+            /* No clipboard access: select the code for a manual copy. */
+            const range = document.createRange();
+            range.selectNodeContents(codeBox);
+            const selection = window.getSelection();
+            selection?.removeAllRanges();
+            selection?.addRange(range);
+          };
+          if (navigator.clipboard !== undefined) {
+            navigator.clipboard.writeText(code).then(done, select);
+          } else {
+            select();
+          }
+        });
+        const setup = menuButton('Set up the game', () => this.showHostSetup(), { kind: 'primary' });
+
+        let shown = '';
+        this.refreshRoom = () => {
+          if (this.phase !== 'room') return;
+          const count = this.guests.length;
+          codeBox.textContent = this.roomCode !== '' ? this.roomCode : '······';
+          copy.disabled = this.roomCode === '';
+          setup.disabled = count === 0;
+          if (this.roomCode === '') {
+            status.textContent = 'Opening a room…';
+          } else if (count === 0) {
+            status.textContent = 'Waiting for players…';
+          } else if (count < MAX_HUMANS - 1) {
+            status.textContent = 'Start when everyone is here.';
+          } else {
+            status.textContent = 'The game is full.';
+          }
+          /* The places of the room: the host, the guests, the free ones. */
+          if (shown !== String(count)) {
+            shown = String(count);
+            roster.replaceChildren();
+            for (let i = 0; i < MAX_HUMANS; i++) {
+              const item = el('li');
+              if (i === 0) {
+                item.append(faceCanvas(12, defColor[0]), el('span', '', 'You are player 1.'));
+              } else if (i <= count) {
+                item.append(faceCanvas(13, defColor[i]), el('span', '', `Player ${i + 1} joined.`));
+              } else {
+                item.append(faceCanvas(0, null), el('span', 'so-item-text', `Place ${i + 1} is free.`));
+              }
+              roster.append(item);
+            }
+          }
+          this.guests.forEach((guest, i) => {
+            guest.transport.send({ t: 'lobby', you: i + 1, count: count + 1 });
+          });
+        };
+
+        win.add(
+          para('Give this code to the other players. Up to three can join.'),
+          codeBox,
+          roster,
+          status,
+          message,
+        );
+        win.foot().append(setup, copy, menuButton('Cancel', cancel, { kind: 'quiet' }));
+        this.refreshRoom();
+      },
+    });
   }
 
   /* A channel opened to the room: exchange versions, then see whether
@@ -408,10 +396,12 @@ export class Lobby implements GameManagerHandler {
     } else if (this.phase === 'setup') {
       if (this.guests.length === 0) {
         this.backToRoom(TEXT.guestsLeft);
+      } else if (this.screen.usesHtmlSetup()) {
+        /* The setup is made for a number of people: make it again. */
+        this.showHostSetup(TEXT.playerLeft);
       } else {
-        /* The box is made for a number of people: make it again. */
         this.showHostSetup();
-        this.showHud('A player left. Set up the game again.');
+        this.showHud(TEXT.playerLeft);
         this.hudTimer = setTimeout(() => this.hideHud(), NOTE_MS);
       }
     }
@@ -419,25 +409,31 @@ export class Lobby implements GameManagerHandler {
 
   protected backToRoom(note = ''): void {
     setOnlineHost(null);
-    this.reopenGameInit();
+    if (!this.screen.usesHtmlSetup()) this.reopenGameInit();
     this.phase = 'room';
     this.showHostRoom(note);
   }
 
-  /* The game init box of the game, in its online form. */
-  protected showHostSetup(): void {
+  /* The game setup in its online form: the setup window of the start
+     screen, or the canvas game init box. */
+  protected showHostSetup(note = ''): void {
     if (this.guests.length === 0) return;
     this.phase = 'setup';
     this.guests.forEach((guest, i) => {
       guest.transport.send({ t: 'lobby', you: i + 1, count: this.guests.length + 1 });
     });
 
-    setOnlineHost({
+    const hooks: OnlineHostHooks = {
       humans: this.guests.length + 1,
       start: (mission) => this.hostStart(mission),
       startSaved: (path) => this.hostStartSaved(path),
       cancel: () => this.backToRoom(),
-    });
+    };
+    if (this.screen.usesHtmlSetup()) {
+      this.setup = this.screen.showSetup('custom', hooks, note);
+      return;
+    }
+    setOnlineHost(hooks);
     this.reopenGameInit();
     this.hide();
   }
@@ -474,8 +470,12 @@ export class Lobby implements GameManagerHandler {
     const check = new Game();
     if (!GameStore.getInstance().read(text, check)) return false;
     if (!hasPlayers(check, humans)) {
-      this.showHud(TEXT.fewPlayers, true);
-      this.hudTimer = setTimeout(() => this.hideHud(), NOTE_MS * 2);
+      if (this.setup !== null) {
+        this.setup.showError(TEXT.fewPlayers);
+      } else {
+        this.showHud(TEXT.fewPlayers, true);
+        this.hudTimer = setTimeout(() => this.hideHud(), NOTE_MS * 2);
+      }
       return false;
     }
     const game = this.buildSavedGame(text, 0, humans, false, false);
@@ -493,6 +493,7 @@ export class Lobby implements GameManagerHandler {
      for each of them to say it is ready. */
   protected hostBegin(game: Game, humans: number): void {
     setOnlineHost(null);
+    this.setup = null;
     this.phase = 'game';
     const seats = this.guests.map((guest, i) => ({
       player: i + 1, transport: guest.transport, token: guest.token,
@@ -535,83 +536,85 @@ export class Lobby implements GameManagerHandler {
   // Guest
 
   protected showJoin(error = '', code = '', connectNow = false): void {
-    const label = element('label', 'ov-label', 'Room code');
-    label.htmlFor = 'lobby-code';
-    const input = element('input', 'ov-input');
-    input.id = 'lobby-code';
-    input.type = 'text';
-    input.maxLength = ROOM_CODE_LENGTH + 2;
-    input.autocomplete = 'off';
-    input.autocapitalize = 'characters';
-    input.spellcheck = false;
-    input.value = code;
-    input.setAttribute('aria-describedby', 'lobby-join-message');
-
-    const message = element('p', error !== '' ? 'ov-error' : 'ov-status', error);
-    message.id = 'lobby-join-message';
-    message.setAttribute('role', 'alert');
-
-    const connect = button('Connect', () => submit());
-    const back = button('Back', () => {
+    this.setup = null;
+    const back = (): void => {
       this.dropConnection();
       this.showMenu();
-    }, true);
-    const buttons = element('div', 'ov-buttons');
-    buttons.append(connect, back);
-
-    const submit = (): void => {
-      const roomCode = normalizeRoomCode(input.value);
-      if (roomCode === null) {
-        message.className = 'ov-error';
-        message.textContent = TEXT.badCode;
-        input.focus();
-        return;
-      }
-      message.className = 'ov-status';
-      message.textContent = 'Connecting…';
-      connect.disabled = true;
-      input.disabled = true;
-
-      this.join(roomCode, {
-        connected: () => this.showGuestWaiting(roomCode),
-        lobby: () => undefined,
-        fail: (text, notFound) => {
-          if (notFound && stored(ROOM_KEY) === roomCode) store(ROOM_KEY, null);
-          this.showJoin(text, roomCode);
-        },
-      });
     };
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') submit();
-    });
+    let submit: () => void = () => undefined;
+    this.screen.show({
+      title: 'Join online game',
+      back,
+      build: (win) => {
+        const field = textField({
+          label: 'Room code',
+          value: code,
+          maxLength: ROOM_CODE_LENGTH + 2,
+          code: true,
+          onEnter: () => submit(),
+        });
+        const input = field.input;
+        input.classList.add('so-input-room');
+        input.autocapitalize = 'characters';
 
-    this.setScreen(
-      element('h1', 'ov-title', 'Join online game'),
-      element('p', 'ov-text', 'Enter the code the host gave you. The same code brings you back into a running game you were in.'),
-      label,
-      input,
-      message,
-      buttons,
-    );
+        const message = messageLine(error !== '' ? 'error' : 'status', error);
+        message.id = 'lobby-join-message';
+        message.setAttribute('role', 'alert');
+        input.setAttribute('aria-describedby', message.id);
+        const say = (text: string, isError: boolean): void => {
+          message.className = isError ? 'so-error' : 'so-status';
+          message.textContent = text;
+        };
+
+        const connect = menuButton('Connect', () => submit(), { kind: 'primary' });
+        submit = (): void => {
+          const roomCode = normalizeRoomCode(input.value);
+          if (roomCode === null) {
+            say(TEXT.badCode, true);
+            input.focus();
+            return;
+          }
+          say('Connecting…', false);
+          connect.disabled = true;
+          input.disabled = true;
+
+          this.join(roomCode, {
+            connected: () => this.showGuestWaiting(roomCode),
+            lobby: () => undefined,
+            fail: (text, notFound) => {
+              if (notFound && stored(ROOM_KEY) === roomCode) store(ROOM_KEY, null);
+              this.showJoin(text, roomCode);
+            },
+          });
+        };
+
+        win.add(
+          para('Enter the code the host gave you. The same code brings you back into a running game you were in.'),
+          field,
+          message,
+        );
+        win.foot().append(connect, menuButton('Back', back, { kind: 'quiet' }));
+        win.initialFocus = input;
+      },
+    });
     if (connectNow) submit();
   }
 
   protected showGuestWaiting(code: string): void {
-    const buttons = element('div', 'ov-buttons');
-    buttons.append(button('Cancel', () => {
+    const cancel = (): void => {
       this.dropConnection();
       this.showMenu();
-    }, true));
-    const place = element('p', 'ov-text', `Connected to game ${code}.`);
-    place.id = 'lobby-place';
-    const status = element('p', 'ov-status', 'Waiting for the host…');
-    status.setAttribute('role', 'status');
-    this.setScreen(
-      element('h1', 'ov-title', 'Join online game'),
-      place,
-      status,
-      buttons,
-    );
+    };
+    this.screen.show({
+      title: 'Join online game',
+      back: cancel,
+      build: (win) => {
+        const place = para(`Connected to game ${code}.`);
+        place.id = 'lobby-place';
+        win.add(place, messageLine('status', 'Waiting for the host…'));
+        win.foot().append(menuButton('Cancel', cancel, { kind: 'quiet' }));
+      },
+    });
   }
 
   /* Open a channel to the room, exchange versions, then take what the host

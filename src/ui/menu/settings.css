@@ -1,0 +1,181 @@
+/* The settings and options windows (settings.ts, options.ts): what the kit
+   does not have. Colours are the variables of theme.css. Not part of
+   Freeserf. */
+
+/* ---- Tabs: nine pages. On a narrow page only the tab that is shown keeps
+   its words, the others show their icon (the words stay as the name of the
+   button and as its tooltip). ---- */
+
+.sg-win .mk-tab {
+  padding: 0 0.5em;
+}
+
+@media (max-width: 620px) {
+  .sg-win .mk-tab {
+    min-width: 2.2em;
+    justify-content: center;
+    padding: 0 0.3em;
+  }
+
+  .sg-win .mk-tab[aria-selected='false'] > canvas + span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* ---- Overview: the pages as a list of large buttons ---- */
+
+.sg-menu {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15em, 1fr));
+  gap: 0.4em;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gx .sg-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  width: 100%;
+  height: 100%;
+  min-height: 3.6em;
+  padding: 0.3em 0.5em;
+  text-align: left;
+  color: var(--gx-text);
+}
+
+.sg-menu-pic canvas {
+  width: 2.8em !important;
+  height: 2.8em !important;
+}
+
+.sg-menu-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1em;
+  min-width: 0;
+}
+
+.sg-menu-name {
+  font-weight: 600;
+  color: var(--gx-text-strong);
+}
+
+.sg-menu-about {
+  font-size: 0.88em;
+  color: var(--gx-text-dim);
+}
+
+.sg-other {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4em;
+}
+
+.sg-other .mk-btn {
+  flex: 1 1 8em;
+}
+
+/* ---- Rows ---- */
+
+/* A state in words next to a button. */
+.sg-win .sg-state {
+  min-width: 0;
+  color: var(--gx-text-dim);
+}
+
+.sg-train .mk-btn {
+  min-width: 2.8em;
+}
+
+/* A line of explanation that belongs to the row above it. */
+.sg-win .sg-note {
+  margin: 0 0 0.5em;
+}
+
+.sg-win .sg-note + .mk-row,
+.sg-win .sg-note + .mk-segmented {
+  border-top: 1px solid var(--gx-line-soft);
+}
+
+/* ---- Save ---- */
+
+.sg-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4em 0.6em;
+}
+
+.sg-field .mk-label {
+  flex: none;
+}
+
+.gx .sg-input {
+  flex: 1 1 10em;
+  min-width: 0;
+  min-height: 2.2em;
+  box-sizing: border-box;
+  padding: 0 0.5em;
+  font: inherit;
+  color: var(--gx-text-strong);
+  background: var(--gx-bg-deep);
+  border: 1px solid var(--gx-btn-line);
+  border-radius: var(--gx-radius-s);
+}
+
+.sg-win .sg-status {
+  min-height: 1.3em;
+  margin: 0.4em 0 0.8em;
+}
+
+.sg-saves {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2em;
+  max-height: 14em;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.gx .sg-save {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 1em;
+  width: 100%;
+  min-height: 2.2em;
+  padding: 0.2em 0.6em;
+  text-align: left;
+  color: var(--gx-text);
+}
+
+.sg-save-name {
+  overflow-wrap: anywhere;
+  color: var(--gx-text-strong);
+}
+
+.sg-save-time {
+  font-size: 0.88em;
+  color: var(--gx-text-dim);
+}
+
+/* The save the name in the field would replace: a frame and a mark, not a
+   colour alone. */
+.gx .sg-save[aria-pressed='true'] {
+  border-color: var(--gx-accent);
+  box-shadow: inset 0.25em 0 0 var(--gx-accent);
+}
+
+.sg-saves-empty {
+  color: var(--gx-text-dim);
+}

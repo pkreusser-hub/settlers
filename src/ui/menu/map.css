@@ -1,0 +1,41 @@
+/* The map window (map.ts). Not part of Freeserf. */
+
+/* The minimap beside its options; under each other in a narrow window. */
+.mp-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.6em 1em;
+}
+
+.mp-picture {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.mp-options {
+  flex: 1 1 14em;
+  min-width: 0;
+}
+
+/* The list of buildings: one button per kind, in even columns. */
+.mp-filter .mk-seg-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.mp-filter .mk-seg-group {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10.5em, 1fr));
+}
+
+.gx .mp-filter .mk-seg {
+  justify-content: flex-start;
+  min-width: 0;
+  text-align: left;
+}

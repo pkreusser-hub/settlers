@@ -1,0 +1,96 @@
+/* The statistics window (stats.ts). Not part of Freeserf. */
+
+/* A grid of things with a line of text each: buildings and serf types with
+   their counts. */
+.stat-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13.5em, 1fr));
+  gap: 0.3em 0.8em;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stat-tile {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  min-width: 0;
+  min-height: 2.6em;
+}
+
+.stat-pic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 3em;
+}
+
+.stat-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.stat-name {
+  color: var(--gx-text-strong);
+  overflow-wrap: anywhere;
+}
+
+.stat-detail {
+  font-size: 0.92em;
+  font-variant-numeric: tabular-nums;
+  color: var(--gx-text);
+}
+
+/* Nothing of the kind: stepped back, the text still says "0". */
+.stat-tile.stat-dim > .stat-pic,
+.stat-tile.stat-dim .stat-detail {
+  opacity: 0.55;
+}
+
+.stat-bar {
+  display: block;
+  width: 100%;
+  max-width: 9em;
+  height: 0.4em;
+  margin-top: 0.15em;
+  background: var(--gx-bg-deep);
+  border: 1px solid var(--gx-line);
+  border-radius: 0.2em;
+  overflow: hidden;
+}
+
+.stat-bar[hidden] {
+  display: none;
+}
+
+.stat-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--gx-bar);
+}
+
+/* The faces of the players under the chart. */
+.stat-players {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11em, 1fr));
+  gap: 0.4em 0.8em;
+  margin: 0 0 0.6em;
+  padding: 0;
+  list-style: none;
+}
+
+.stat-player {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  min-width: 0;
+}
+
+/* The gauges have long names: the bar keeps its place at the right. */
+.stat-win .mk-meter .mk-value {
+  white-space: nowrap;
+}

@@ -50,7 +50,7 @@ import { _ } from './translation';
 // VERSION_VCS there, the tag of the version control system written by the
 // build; here it is the version of the project of the reference
 // (CMakeLists.txt: project(FreeSerf VERSION 0.5.0)).
-const FREESERF_VERSION = '0.5.0';
+export const FREESERF_VERSION = '0.5.0';
 
 class RandomInput extends TextInput {
   protected savedText: string;

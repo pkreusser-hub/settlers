@@ -1,0 +1,83 @@
+/* The message window (messages.ts): a window of the kit above the panel,
+   where the canvas box of the messages opens. Not part of Freeserf. */
+
+.mk-win.ms-win {
+  top: auto;
+  bottom: max(96px, 15vh);
+  transform: translateX(-50%);
+  width: 24em;
+}
+
+.ms-win .mk-head {
+  cursor: default;
+}
+
+.ms-message {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+}
+
+.ms-picture {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2em;
+  flex: none;
+  max-width: 45%;
+}
+
+.ms-picture canvas {
+  max-width: 100%;
+  height: auto !important;
+}
+
+.ms-caption {
+  font-size: 0.88em;
+  text-align: center;
+  color: var(--gx-text-dim);
+}
+
+.ms-text {
+  flex: 1;
+  margin: 0;
+  color: var(--gx-text-strong);
+}
+
+.ms-log {
+  margin-top: 0.6em;
+  border-top: 1px solid var(--gx-line-soft);
+}
+
+.ms-log-title {
+  padding: 0.3em 0;
+  font-size: 0.9em;
+  color: var(--gx-text-dim);
+  cursor: pointer;
+}
+
+.ms-log-list {
+  margin: 0;
+  padding: 0;
+  max-height: 9em;
+  overflow: auto;
+  list-style: none;
+}
+
+.ms-log-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  min-height: 2em;
+  font-size: 0.92em;
+  border-top: 1px solid var(--gx-line-soft);
+}
+
+.ms-log-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.ms-win .mk-foot {
+  justify-content: flex-end;
+}

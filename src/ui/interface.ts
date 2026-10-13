@@ -29,7 +29,7 @@ import { cycleDirectionsCw, Map, MapObject, MapSpace, Road } from '../game/map';
 import type { Direction, MapPos } from '../game/map';
 import { BIT, BIT_TEST, i32, idiv, Log, NOT_REACHED, u32 } from '../game/misc';
 import { MessageType } from '../game/player';
-import type { Player } from '../game/player';
+import type { Message, Player } from '../game/player';
 import { Random } from '../game/random';
 import { ResourceType } from '../game/resource';
 import { GameStore } from '../game/savegame';
@@ -103,6 +103,28 @@ export interface HtmlBox {
   close(): void;
   /* A command was applied: show the new state. */
   refresh?(): void;
+}
+
+// PORT: not in the C++. The start screen and the game setup of the page
+// (ui/menu/start.ts) in place of the canvas GameInitBox. Without a hook, or
+// when open() answers false, the canvas box opens.
+export interface GameInitHook {
+  /* Show the start screen (with the saved games when `load`). */
+  open(load: boolean): boolean;
+  close(): void;
+  /* Shown, and no box of the game is open over it. */
+  isOpen(): boolean;
+  /* Shown at all: the game behind it is not the player's business. */
+  isActive(): boolean;
+}
+
+// PORT: not in the C++. The message window of the page (ui/menu/messages.ts)
+// in place of the canvas NotificationBox. show() answers false to have the
+// canvas box.
+export interface MessageHook {
+  show(message: Message): boolean;
+  close(): void;
+  isOpen(): boolean;
 }
 
 // PORT: not in the C++. What the callers of getPopupBox() use of the box
@@ -544,8 +566,30 @@ export class Interface extends GuiObject implements GameManagerHandler {
     return this.htmlBox;
   }
 
+  // PORT: not in the C++. See GameInitHook and MessageHook.
+  gameInitHook: GameInitHook | null = null;
+  messageHook: MessageHook | null = null;
+
+  // PORT: not in the C++. What open_game_init() does to the panel and the
+  // map while the box is open.
+  protected hideForGameInit(): void {
+    if (this.panel !== null) {
+      this.panel.setDisplayed(false);
+    }
+    if (this.viewport !== null) {
+      this.viewport.setEnabled(false);
+    }
+    this.layout();
+  }
+
   /* Open box for starting a new game */
   openGameInit(): void {
+    // PORT: not in the C++. The start screen of the page takes the place of
+    // the box.
+    if (this.initBox === null && this.gameInitHook !== null && this.gameInitHook.open(false)) {
+      this.hideForGameInit();
+      return;
+    }
     if (this.initBox === null) {
       this.initBox = new GameInitBox(this);
       this.addFloat(this.initBox, 0, 0);
@@ -561,6 +605,10 @@ export class Interface extends GuiObject implements GameManagerHandler {
 
   // PORT: not in the C++. The game init box with the saved games.
   openGameLoad(): void {
+    if (this.initBox === null && this.gameInitHook !== null && this.gameInitHook.open(true)) {
+      this.hideForGameInit();
+      return;
+    }
     this.openGameInit();
     this.initBox!.showLoad();
   }
@@ -669,6 +717,10 @@ export class Interface extends GuiObject implements GameManagerHandler {
   }
 
   closeGameInit(): void {
+    // PORT: not in the C++. The start screen of the page goes too.
+    if (this.gameInitHook !== null) {
+      this.gameInitHook.close();
+    }
     if (this.initBox !== null) {
       this.initBox.setDisplayed(false);
       this.delFloat(this.initBox);
@@ -703,12 +755,18 @@ export class Interface extends GuiObject implements GameManagerHandler {
       /* TODO */
     }
 
-    if (this.notificationBox === null) {
-      this.notificationBox = new NotificationBox(this);
-      this.addFloat(this.notificationBox, 0, 0);
+    // PORT: not in the C++. The message window of the page shows the
+    // message; the canvas box is the fallback.
+    if (this.messageHook !== null && this.messageHook.show(message)) {
+      this.closeCanvasMessage();
+    } else {
+      if (this.notificationBox === null) {
+        this.notificationBox = new NotificationBox(this);
+        this.addFloat(this.notificationBox, 0, 0);
+      }
+      this.notificationBox.show(message);
+      this.layout();
     }
-    this.notificationBox.show(message);
-    this.layout();
 
     if (BIT_TEST(0x8f3fe, message.type)) {
       /* Move screen to new position */
@@ -749,6 +807,15 @@ export class Interface extends GuiObject implements GameManagerHandler {
   }
 
   closeMessage(): void {
+    // PORT: not in the C++. The message window of the page goes too.
+    if (this.messageHook !== null) {
+      this.messageHook.close();
+    }
+    this.closeCanvasMessage();
+  }
+
+  // PORT: the body of close_message().
+  protected closeCanvasMessage(): void {
     if (this.notificationBox === null) {
       return;
     }
@@ -1527,7 +1594,10 @@ export class Interface extends GuiObject implements GameManagerHandler {
     if (u32(now - this.autosaveLastTicks) < this.autosaveMinutes * 60 * 1000) return;
     this.autosaveLastTicks = now;
 
-    if (this.initBox !== null || this.game!.getTick() === this.autosaveLastGameTick) {
+    // PORT: the start screen of the page counts as the game init box.
+    const initOpen = this.initBox !== null ||
+      (this.gameInitHook !== null && this.gameInitHook.isActive());
+    if (initOpen || this.game!.getTick() === this.autosaveLastGameTick) {
       return;
     }
     this.autosaveLastGameTick = this.game!.getTick();
@@ -1666,8 +1736,11 @@ export class Interface extends GuiObject implements GameManagerHandler {
   popupHook: ((box: number, fromCanvas?: boolean) => boolean) | null = null;
 
   /* The game init box is open: the keys of the overlays are off. */
+  // PORT: the start screen of the page counts, unless a box of the game
+  // (the options) is open over it.
   isGameInitOpen(): boolean {
-    return this.initBox !== null;
+    return this.initBox !== null ||
+      (this.gameInitHook !== null && this.gameInitHook.isOpen());
   }
 
   protected override handleKeyPressed(key: number, modifier: number): boolean {
@@ -1689,7 +1762,10 @@ export class Interface extends GuiObject implements GameManagerHandler {
         break;
       }
       case 27: {
-        if (this.notificationBox !== null && this.notificationBox.isDisplayed()) {
+        if (
+          (this.notificationBox !== null && this.notificationBox.isDisplayed()) ||
+          (this.messageHook !== null && this.messageHook.isOpen())
+        ) {
           this.closeMessage();
         } else if ((this.popup !== null && this.popup.isDisplayed()) || this.htmlBox !== null) {
           this.closePopup();

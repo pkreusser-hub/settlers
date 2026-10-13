@@ -1,0 +1,158 @@
+/* The windows of a building, a flag or a map spot (buildings.ts and the
+   files it names). Colours are the variables of theme.css, sizes are in em
+   or --gx-px. Not part of Freeserf. */
+
+/* ---- Header: picture, name, state ---- */
+
+.bw-head {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+  margin-bottom: 0.5em;
+  padding-bottom: 0.5em;
+  border-bottom: 1px solid var(--gx-line-soft);
+}
+
+.bw-head-pic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 3em;
+}
+
+.bw-head-pic:empty {
+  display: none;
+}
+
+.bw-head-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.bw-name {
+  font-size: 1.15em;
+  font-weight: 600;
+  color: var(--gx-text-strong);
+}
+
+.bw-state {
+  color: var(--gx-text);
+}
+
+.bw-line {
+  margin-top: 0.2em;
+  font-size: 0.92em;
+  color: var(--gx-text-dim);
+}
+
+.bw-note {
+  font-size: 0.85em;
+  color: var(--gx-text-faint);
+}
+
+/* ---- Rows ---- */
+
+/* A part that is built again (dynamic()): its rows follow the rows before
+   it as if they were in one list. */
+.bw-part:empty {
+  display: none;
+}
+
+.bw-part + .bw-part,
+.bw-part > .mk-section {
+  margin-top: 0.8em;
+}
+
+/* A value that is a sentence: it may take the line under its name. */
+.bw-wide-value .mk-label {
+  flex: 1 1 6em;
+}
+
+.bw-wide-value .mk-side {
+  flex: 1 1 12em;
+}
+
+.bw-wide-value .mk-value {
+  overflow-wrap: anywhere;
+}
+
+.bw-pics {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ---- Flag: the eight places ---- */
+
+.bw-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5em, 1fr));
+  gap: 0.2em 0.6em;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bw-slot {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  min-width: 0;
+  min-height: calc(16 * var(--gx-px));
+}
+
+.bw-slot-place {
+  flex: none;
+  width: 1.4em;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--gx-text-faint);
+}
+
+.bw-slot-text {
+  color: var(--gx-text-strong);
+}
+
+.bw-slot.mk-zero .bw-slot-text {
+  color: var(--gx-text-dim);
+}
+
+/* ---- Actions ---- */
+
+.bw-actions[hidden] {
+  display: none;
+}
+
+.bw-actions .mk-section-body,
+.bw-action-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4em;
+}
+
+.bw-action-list {
+  flex: 1 1 100%;
+}
+
+.bw-action-note {
+  flex: 1 1 100%;
+  margin: 0;
+}
+
+.bw-demolish {
+  flex: 1 1 100%;
+}
+
+.bw-demolish .mk-confirm {
+  padding: 0.4em 0.6em;
+  background: var(--gx-bg-deep);
+  border: 1px solid var(--gx-danger-line);
+  border-radius: var(--gx-radius-s);
+}
+
+/* ---- Attack ---- */
+
+.bw-distance .mk-value {
+  min-width: 2em;
+}

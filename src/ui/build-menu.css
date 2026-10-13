@@ -567,6 +567,14 @@
   border-top: 1px solid #3f482c;
 }
 
+.st-head {
+  grid-column: 1 / -1;
+  font-size: 0.72em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #a9b38c;
+}
+
 .st-item {
   display: flex;
   align-items: center;

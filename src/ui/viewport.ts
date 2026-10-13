@@ -27,10 +27,8 @@ import { previewAttack } from '../net/commands';
 import { AudioTypeSfx } from './audio';
 import { Data } from './data-instance';
 import type { DataPSource } from './data-instance';
-import { Event as GuiEvent, EventButton, EventType } from './event-loop';
+import { EventButton } from './event-loop';
 import { Color, Frame, Graphics } from './gfx';
-import { Globe, paintGlobeHaze, paintGlobeSky } from './globe';
-import type { GlobeStrips } from './globe';
 import { GuiObject } from './gui';
 import { mapBuildingSprite } from './interface';
 import type { Interface } from './interface';
@@ -644,10 +642,6 @@ export class Viewport extends GuiObject implements MapHandler {
     }
 
     if (factor === 0) {
-      if (this.globe !== null) {
-        this.drawGlobe(_frame, this.frame, 1, pixelSize, smooth && pixelSize !== 1);
-        return;
-      }
       _frame.drawFrameZoomed(this.x, this.y, this.frame, this.width, this.height,
                              pixelSize, smooth && pixelSize !== 1);
       return;
@@ -668,228 +662,8 @@ export class Viewport extends GuiObject implements MapHandler {
       }
       this.smoothValid = true;
     }
-    if (this.globe !== null) {
-      this.drawGlobe(_frame, this.smoothFrame, factor, pixelSize, pixelSize !== factor);
-      return;
-    }
     _frame.drawFrameZoomed(this.x, this.y, this.smoothFrame, smoothWidth, smoothHeight,
                            pixelSize / factor, pixelSize !== factor);
-  }
-
-  // PORT: not in the C++. The "Globe" mode (see globe.ts): the projection
-  // of the picture of the view onto the screen, null when the picture is
-  // put there as it is. With it the frame of the view (width x height, the
-  // flat picture) is larger than the place of the view on the screen
-  // (viewWidth x viewHeight); everything that draws works on the flat
-  // picture as before, and the positions on the screen go through
-  // flatFromView() and viewPixFromMapCoord().
-  protected globe: Globe | null = null;
-  protected lastGlobe: Globe | null = null;
-  protected viewWidth = 0;
-  protected viewHeight = 0;
-  protected lastViewWidth = 0;
-  protected lastViewHeight = 0;
-  /* What drawGlobe() keeps between the pictures, for globeScale device
-     pixels per pixel of the map. */
-  protected globeScale = 0;
-  protected globeStrips: GlobeStrips | null = null;
-  protected globeSky: OffscreenCanvas | null = null;
-  protected globeHaze: OffscreenCanvas | null = null;
-  /* The place of the mouse on the screen during a drag, in pixels of the
-     view; null for the steps of the arrow keys. */
-  protected dragStartX = -1;
-  protected dragStartY = -1;
-  protected dragMovedX = 0;
-  protected dragMovedY = 0;
-  protected dragPoint: [number, number] | null = null;
-  protected globeDragRestX = 0;
-  protected globeDragRestY = 0;
-
-  /* width, height: the size of the view on the screen. */
-  override setSize(newWidth: number, newHeight: number): void {
-    this.lastGlobe = this.globe;
-    this.lastViewWidth = this.viewWidth;
-    this.lastViewHeight = this.viewHeight;
-    this.viewWidth = newWidth;
-    this.viewHeight = newHeight;
-    this.globe = Graphics.getInstance().getMapGlobe() ? new Globe(newWidth, newHeight) : null;
-    this.globeStrips = null;
-    this.globeSky = null;
-    this.globeHaze = null;
-    if (this.globe === null) {
-      super.setSize(newWidth, newHeight);
-    } else {
-      super.setSize(this.globe.flatWidth, this.globe.flatHeight);
-    }
-  }
-
-  /* The pixel of the picture of the view that is shown at the pixel x, y
-     of the view on the screen; null in the sky of the "Globe" mode. */
-  protected flatFromView(x: number, y: number): [number, number] | null {
-    if (this.globe === null) {
-      return [x, y];
-    }
-    const flat = this.globe.inverse(x + 0.5, y + 0.5);
-    if (flat === null) {
-      return null;
-    }
-    return [Math.floor(flat[0]), Math.floor(flat[1])];
-  }
-
-  /* The pixel of the picture in the middle of the view on the screen. */
-  protected centerPix(): [number, number] {
-    if (this.globe !== null) {
-      const flat = this.globe.inverse(this.viewWidth / 2, this.viewHeight / 2);
-      if (flat !== null) {
-        return [Math.floor(flat[0]), Math.floor(flat[1])];
-      }
-    }
-    return [idiv(this.width, 2), idiv(this.height, 2)];
-  }
-
-  /* The map position at the pixel x, y of the view on the screen; null
-     where there is no map (the sky of the "Globe" mode). For everything
-     outside of this class that has a place on the screen. */
-  mapPosFromViewPix(x: number, y: number): MapPos | null {
-    const flat = this.flatFromView(x, y);
-    return flat !== null ? this.mapPosFromScreenPix(flat[0], flat[1]) : null;
-  }
-
-  /* The place of a map position in the view on the screen, as
-     screenPixFromMapCoord() gives it in the picture; null behind the
-     horizon of the "Globe" mode. */
-  viewPixFromMapCoord(pos: MapPos): [number, number] | null {
-    let [sx, sy] = this.screenPixFromMapCoord(pos);
-    if (this.globe === null) {
-      return [sx, sy];
-    }
-    /* The map wraps: a place just left of or above the picture comes back
-       with a large coordinate. */
-    const lwidth = this.map.getCols() * MAP_TILE_WIDTH;
-    const lheight = this.map.getRows() * MAP_TILE_HEIGHT;
-    if (sx > lwidth - 64) sx -= lwidth;
-    if (sy > lheight - 64) sy -= lheight;
-    return this.globe.forward(sx, sy);
-  }
-
-  /* Put the picture src of the view (srcScale of its pixels per pixel of
-     the map) on dest as a planet: the lower part as it is, the rows above
-     in strips of one row of device pixels each, narrower and closer
-     together towards the horizon, and the sky above. smooth: as the flat
-     picture would be drawn. */
-  protected drawGlobe(dest: Frame, src: Frame, srcScale: number, pixelSize: number,
-                      smooth: boolean): void {
-    /* Below this many device pixels per pixel of the source the rows are
-       interpolated also without the "Smooth" mode: rows left out flicker
-       when the map moves. */
-    const kCrispMin = 0.8;
-
-    const globe = this.globe!;
-    const ctx = dest.getContext();
-    const from = src.getContext();
-    if (ctx === null || from === null) return;
-    const texture = from.canvas;
-
-    const widthDev = Math.round(this.viewWidth * pixelSize);
-    const heightDev = Math.round(this.viewHeight * pixelSize);
-    const y0Dev = Math.round(globe.y0 * pixelSize);
-    if (widthDev <= 0 || y0Dev <= 0) return;
-
-    if (this.globeStrips === null || this.globeScale !== pixelSize) {
-      this.globeScale = pixelSize;
-      this.globeStrips = globe.strips(pixelSize);
-      this.globeSky = new OffscreenCanvas(widthDev, y0Dev);
-      this.globeHaze = new OffscreenCanvas(widthDev, y0Dev);
-      const sky = this.globeSky.getContext('2d');
-      const haze = this.globeHaze.getContext('2d');
-      if (sky !== null) paintGlobeSky(sky, globe, pixelSize, widthDev, y0Dev);
-      if (haze !== null) paintGlobeHaze(haze, globe, pixelSize, widthDev, y0Dev);
-    }
-    const strips = this.globeStrips;
-
-    const scale = Graphics.getInstance().getUiScale();
-    const ox = Math.round(this.x * scale);
-    const oy = Math.round(this.y * scale);
-
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(this.globeSky!, ox, oy);
-
-    const srcWidth = globe.flatWidth * srcScale;
-    let smoothing = false;
-    ctx.imageSmoothingQuality = 'high';
-    for (let i = 0, n = strips.bottom - strips.top; i < n; i++) {
-      if (strips.h[i] <= 0 || strips.w[i] <= 0) continue;
-      const rowSmooth = smooth || strips.size[i] < kCrispMin * srcScale;
-      if (rowSmooth !== smoothing) {
-        smoothing = rowSmooth;
-        ctx.imageSmoothingEnabled = smoothing;
-      }
-      ctx.drawImage(texture, 0, strips.v[i] * srcScale, srcWidth, strips.h[i] * srcScale,
-                    ox + strips.x[i], oy + strips.top + i, strips.w[i], 1);
-    }
-
-    /* The flat part. */
-    ctx.imageSmoothingEnabled = smooth;
-    if (heightDev > y0Dev) {
-      ctx.drawImage(texture, globe.pad * srcScale, globe.v0 * srcScale,
-                    this.viewWidth * srcScale, (this.viewHeight - globe.y0) * srcScale,
-                    ox, oy + y0Dev, widthDev, heightDev - y0Dev);
-    }
-
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(this.globeHaze!, ox, oy);
-  }
-
-  // PORT: not in the C++. Keeps the place of the mouse during a drag for
-  // handleDrag(): the event has the place where the drag began and the
-  // step, the steps since then are added up here.
-  override handleEvent(event: GuiEvent): boolean {
-    if (this.globe !== null) {
-      if (event.type === EventType.TypeDrag) {
-        if (event.x !== this.dragStartX || event.y !== this.dragStartY) {
-          this.dragStartX = event.x;
-          this.dragStartY = event.y;
-          this.dragMovedX = 0;
-          this.dragMovedY = 0;
-        }
-        if (event.x === 0 && event.y === 0) {
-          this.dragPoint = null;
-        } else {
-          this.dragPoint = [(event.x - this.x) / this.zoom + this.dragMovedX,
-                            (event.y - this.y) / this.zoom + this.dragMovedY];
-        }
-        this.dragMovedX += event.dx / this.zoom;
-        this.dragMovedY += event.dy / this.zoom;
-      } else if (event.type === EventType.TypeClick) {
-        this.dragStartX = -1;
-        this.dragStartY = -1;
-      }
-    }
-    return super.handleEvent(event);
-  }
-
-  /* The step lx, ly of a drag on the screen as a step in the picture: the
-     map moves under the mouse as fast as the mouse, also where the planet
-     shows it smaller. */
-  protected globeDragStep(lx: number, ly: number): [number, number] {
-    /* Close to the horizon a step of the mouse is any number of pixels of
-       the map. */
-    const kMaxGain = 4;
-
-    const globe = this.globe;
-    const point = this.dragPoint;
-    if (globe === null || point === null) return [lx, ly];
-    const a = globe.inverse(point[0], point[1]);
-    const b = globe.inverse(point[0] + lx, point[1] + ly);
-    if (a === null || b === null) return [lx, ly];
-    const limit = kMaxGain * Math.max(1, Math.abs(lx), Math.abs(ly));
-    const fx = Math.max(-limit, Math.min(limit, b[0] - a[0])) + this.globeDragRestX;
-    const fy = Math.max(-limit, Math.min(limit, b[1] - a[1])) + this.globeDragRestY;
-    const dx = Math.trunc(fx);
-    const dy = Math.trunc(fy);
-    this.globeDragRestX = fx - dx;
-    this.globeDragRestY = fy - dy;
-    return [dx, dy];
   }
 
   getWaterInView(): number {
@@ -1120,29 +894,7 @@ export class Viewport extends GuiObject implements MapHandler {
        changes (window resize, zoom). */
     const gfx = Graphics.getInstance();
     const scale = gfx.getMapScale();
-    if (this.lastWidth !== 0 && this.lastHeight !== 0 &&
-        (this.globe !== null || this.lastGlobe !== null)) {
-      // PORT: not in the C++. With the "Globe" mode before or after the
-      // change: the point of the map under the mouse (a zoom with the
-      // wheel) or in the middle of the screen stays there. The point is
-      // looked up in the old and in the new picture.
-      const anchor = gfx.getMapZoomAnchor();
-      const flat = (globe: Globe | null, x: number, y: number): [number, number] | null =>
-        globe !== null ? globe.inverse(x, y) : [x, y];
-      let from: [number, number] | null = null;
-      let to: [number, number] | null = null;
-      if (anchor !== null && this.lastScale > 0 && scale !== this.lastScale) {
-        from = flat(this.lastGlobe, anchor[0] / this.lastScale, anchor[1] / this.lastScale);
-        to = flat(this.globe, anchor[0] / scale, anchor[1] / scale);
-      }
-      if (from === null || to === null) {
-        from = flat(this.lastGlobe, this.lastViewWidth / 2, this.lastViewHeight / 2);
-        to = flat(this.globe, this.viewWidth / 2, this.viewHeight / 2);
-      }
-      if (from !== null && to !== null) {
-        this.moveByPixels(Math.round(from[0] - to[0]), Math.round(from[1] - to[1]));
-      }
-    } else if (this.lastWidth !== 0 && this.lastHeight !== 0) {
+    if (this.lastWidth !== 0 && this.lastHeight !== 0) {
       const anchor = gfx.getMapZoomAnchor();
       if (anchor !== null && this.lastScale > 0 && scale !== this.lastScale) {
         // PORT: not in the C++. A zoom with the mouse wheel: the point of
@@ -2868,12 +2620,6 @@ export class Viewport extends GuiObject implements MapHandler {
   }
 
   protected override handleClickLeft(lx: number, ly: number): boolean {
-    // PORT: not in the C++. The "Globe" mode: the pixel of the picture
-    // under the click; a click in the sky does nothing.
-    const flat = this.flatFromView(lx, ly);
-    if (flat === null) return true;
-    [lx, ly] = flat;
-
     this.setRedraw();
 
     const clkPos = this.mapPosFromScreenPix(lx, ly);
@@ -2890,11 +2636,6 @@ export class Viewport extends GuiObject implements MapHandler {
 
   /* The original's special click (right button held). */
   protected override handleClickRight(lx: number, ly: number): boolean {
-    // PORT: not in the C++, see handleClickLeft().
-    const flat = this.flatFromView(lx, ly);
-    if (flat === null) return true;
-    [lx, ly] = flat;
-
     this.setRedraw();
 
     const clkPos = this.mapPosFromScreenPix(lx, ly);
@@ -2913,11 +2654,6 @@ export class Viewport extends GuiObject implements MapHandler {
 
   protected override handleDblClick(lx: number, ly: number, button: EventButton): boolean {
     if (button !== EventButton.ButtonLeft) return false;
-
-    // PORT: not in the C++, see handleClickLeft().
-    const flat = this.flatFromView(lx, ly);
-    if (flat === null) return true;
-    [lx, ly] = flat;
 
     this.setRedraw();
 
@@ -3083,10 +2819,6 @@ export class Viewport extends GuiObject implements MapHandler {
   }
 
   protected override handleDrag(lx: number, ly: number): boolean {
-    if (this.globe !== null) {
-      // PORT: not in the C++.
-      [lx, ly] = this.globeDragStep(lx, ly);
-    }
     if (this.interface.getInvertScrolling()) {
       ly = -ly;
     }
@@ -3266,9 +2998,7 @@ export class Viewport extends GuiObject implements MapHandler {
   }
 
   getCurrentMapPos(): MapPos {
-    // PORT: the middle of the view on the screen, see centerPix().
-    const [cx, cy] = this.centerPix();
-    return this.mapPosFromScreenPix(cx, cy);
+    return this.mapPosFromScreenPix(idiv(this.width, 2), idiv(this.height, 2));
   }
 
   moveToMapPos(pos: MapPos): void {
@@ -3279,10 +3009,8 @@ export class Viewport extends GuiObject implements MapHandler {
     const mapHeight = map.getRows() * MAP_TILE_HEIGHT;
 
     /* Center screen. */
-    // PORT: the middle of the view on the screen, see centerPix().
-    const [cx, cy] = this.centerPix();
-    mx -= cx;
-    my -= cy;
+    mx -= idiv(this.width, 2);
+    my -= idiv(this.height, 2);
 
     if (my < 0) {
       mx -= idiv(map.getRows() * MAP_TILE_WIDTH, 2);

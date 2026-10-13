@@ -167,6 +167,10 @@ export class StockPanel {
       const box = el('div', 'st-group');
       box.setAttribute('role', 'group');
       box.setAttribute('aria-label', title);
+      const head = el('div', 'st-head');
+      head.textContent = title;
+      head.setAttribute('aria-hidden', 'true');
+      box.append(head);
       this.body.append(box);
       return box;
     };
@@ -188,7 +192,7 @@ export class StockPanel {
         entry(box, resourceCanvas(res as ResourceType));
       }
     }
-    const people = group('Serfs and knights');
+    const people = group('Workers and knights');
     const serfIcon = (index: number): HTMLCanvasElement => {
       const canvas = spriteCanvas(Asset.Icon, index);
       canvas.classList.add('gx-res');

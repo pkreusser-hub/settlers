@@ -57,12 +57,13 @@ const texts: { [type: number]: { title: string; text: string } } = {
   [MessageType.Type30MSinceSave]: { title: 'Save your game', text: '30 minutes have passed since you last saved.' },
   [MessageType.Type1HSinceSave]: { title: 'Save your game', text: 'One hour has passed since you last saved.' },
   [MessageType.TypeCallToStock]: { title: 'Timer', text: 'You asked to be called to this stock.' },
+  [MessageType.TypeUpgradeDone]: { title: 'Upgrade finished', text: 'The upgrade of this building is done.' },
 };
 
 /* The messages with a place on the map: the ones Interface.openMessage()
    moves the map for. */
 export function messageHasPlace(type: MessageType): boolean {
-  return BIT_TEST(0x8f3fe, type) !== 0;
+  return BIT_TEST(0x18f3fe, type) !== 0;
 }
 
 export function messageText(type: MessageType): { title: string; text: string } {

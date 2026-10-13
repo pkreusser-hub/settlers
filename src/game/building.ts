@@ -1275,6 +1275,9 @@ export class Building extends GameObject {
     /* More room for gold (stock 1 keeps what lies there). */
     this.stock[1].maximum = militaryMaxGold(newType);
 
+    player.addNotification(MessageType.TypeUpgradeDone, this.pos,
+                           newType === BuildingType.TypeFortress ? 2 : 1);
+
     /* The knights inside train as those of the new type. */
     let serfIndex = this.firstKnight;
     for (let guard = 0; serfIndex !== 0 && guard < 1000; guard++) {

@@ -111,6 +111,11 @@ export function notificationViews(): NotificationBoxNotificationView[] {
         decoration: NOTIFICATION_SHOW_MAP_OBJECT,
         icon: mapBuildingSprite[BuildingType.TypeStock],
         text: N_('You wanted me\nto call you\nto this stock') },
+      // EXT: an upgrade in place is done.
+      { type: MessageType.TypeUpgradeDone,
+        decoration: NOTIFICATION_SHOW_BUILDING,
+        icon: 0,
+        text: N_('The upgrade\nof this building\nis done') },
       { type: MessageType.TypeNone, decoration: 0, icon: 0, text: null },
     ];
   }

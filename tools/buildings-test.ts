@@ -504,6 +504,9 @@ check(`tower -> fortress finished in the original game after ${finished} more up
       hut.getMaximumInStock(1) === 8 && problems === 0 && integrity() === 0 &&
       map.getObj(hutPos) === MapObject.ObjectLargeBuilding &&
       upgradeRefusal(game, hutPos, player) === UpgradeRefusal.WrongType);
+check('the player has a message for the finished fortress at its place',
+      (player as unknown as { messages: { type: number; pos: number; data: number }[] }).messages
+        .some((m) => m.type === 20 && m.pos === hutPos && m.data === 2));
 // ---------------------------------------------------------------------------
 // 5. An upgrade that does not end: the building is demolished, or given up
 // as when an enemy takes it, with material on the way.

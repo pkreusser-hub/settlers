@@ -768,7 +768,7 @@ export class Interface extends GuiObject implements GameManagerHandler {
       this.layout();
     }
 
-    if (BIT_TEST(0x8f3fe, message.type)) {
+    if (BIT_TEST(0x18f3fe, message.type)) {
       /* Move screen to new position */
       this.viewport!.moveToMapPos(message.pos);
       this.updateMapCursorPos(message.pos);

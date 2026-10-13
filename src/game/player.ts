@@ -61,6 +61,9 @@ export enum MessageType {
   Type30MSinceSave = 17,
   Type1HSinceSave = 18,
   TypeCallToStock = 19,
+  // EXT: an upgrade in place is done; data as TypeKnightOccupied (1 tower,
+  // 2 fortress).
+  TypeUpgradeDone = 20,
 }
 
 export class Message {

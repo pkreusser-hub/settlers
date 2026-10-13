@@ -32,6 +32,7 @@ import { Color, Frame, Graphics } from './gfx';
 import { GuiObject } from './gui';
 import { mapBuildingSprite } from './interface';
 import type { Interface } from './interface';
+import { PixelScaler } from './pixel-scale';
 import { PopupBoxType } from './popup';
 
 const MAP_TILE_WIDTH = 32;
@@ -573,6 +574,96 @@ export class Viewport extends GuiObject implements MapHandler {
 
   switchLayer(layer: ViewportLayer): void {
     this.layers ^= layer;
+    // PORT: not in the C++, where the next animation step draws the view
+    // again; a paused game has none.
+    this.setRedraw();
+  }
+
+  // PORT: not in the C++. For the "Spots" button of the page (see hud.ts).
+  hasLayer(layer: ViewportLayer): boolean {
+    return (this.layers & layer) !== 0;
+  }
+
+  // PORT: not in the C++. The device pixels per pixel of the map at the
+  // last layout, and the picture of the "Smooth" mode: the frame magnified
+  // with the pixel-art filter, valid until the frame is drawn again.
+  protected lastScale = 0;
+  protected scaler = new PixelScaler();
+  protected smoothFrame: Frame | null = null;
+  protected smoothValid = false;
+
+  protected deleteSmoothFrame(): void {
+    if (this.smoothFrame !== null) {
+      this.smoothFrame.destroy();
+      this.smoothFrame = null;
+    }
+    this.smoothValid = false;
+    this.scaler.clear();
+  }
+
+  // PORT: not in the C++, where GuiObject::draw() stretches the frame of
+  // the view over the frame of the interface, which SDL stretches over the
+  // window: at most scales the pixels of the map came out in two sizes.
+  // Here every pixel of the map is drawn as Graphics.getMapScale() device
+  // pixels on the frame of the interface (which has the scale of the
+  // screen), so a whole scale gives pixels of one size.
+  //
+  // In the "Smooth" mode the finished picture goes through Scale2x or
+  // Scale3x first (pixel-scale.ts): by the scale itself when that is 2, 3
+  // or 4, else by the next factor above it and the rest by interpolation.
+  // Below a scale of 1 the picture is only interpolated. The landscape
+  // tiles and the sprites stay as they are; the filter costs one pass over
+  // the picture each time the view is drawn, so a picture of more than
+  // kSmoothMaxPixels pixels (a small scale on a large display) is only
+  // interpolated as well.
+  override draw(_frame: Frame): void {
+    if (!this.displayed) {
+      return;
+    }
+
+    const kSmoothMaxPixels = 1500000;
+
+    const gfx = Graphics.getInstance();
+    const pixelSize = gfx.getMapScale();
+    const smooth = gfx.getMapSmooth();
+    const factor = (smooth && pixelSize > 1 &&
+                    this.width * this.height <= kSmoothMaxPixels)
+      ? PixelScaler.factorFor(pixelSize) : 0;
+
+    if (this.frame === null) {
+      /* One pixel of the canvas per pixel of the map, whatever the size. */
+      this.frame = gfx.createFrame(this.width, this.height, 1);
+    }
+
+    if (this.redraw) {
+      this.internalDraw();
+      this.redraw = false;
+      this.smoothValid = false;
+    }
+
+    if (factor === 0) {
+      _frame.drawFrameZoomed(this.x, this.y, this.frame, this.width, this.height,
+                             pixelSize, smooth && pixelSize !== 1);
+      return;
+    }
+
+    const smoothWidth = this.width * factor;
+    const smoothHeight = this.height * factor;
+    if (this.smoothFrame === null) {
+      this.smoothFrame = gfx.createFrame(smoothWidth, smoothHeight, 1);
+      this.smoothValid = false;
+    }
+    if (!this.smoothValid) {
+      const from = this.frame.getContext();
+      const to = this.smoothFrame.getContext();
+      if (from !== null && to !== null) {
+        const pixels = from.getImageData(0, 0, this.width, this.height);
+        to.putImageData(this.scaler.scale(pixels.data, this.width, this.height, factor), 0, 0);
+      }
+      this.smoothValid = true;
+    }
+    _frame.drawFrameZoomed(this.x, this.y, this.smoothFrame, smoothWidth, smoothHeight,
+                           pixelSize / factor, pixelSize !== factor);
   }
 
   getWaterInView(): number {
@@ -801,18 +892,34 @@ export class Viewport extends GuiObject implements MapHandler {
   protected override layout(): void {
     /* Keep the map position in the middle of the view when the size
        changes (window resize, zoom). */
+    const gfx = Graphics.getInstance();
+    const scale = gfx.getMapScale();
     if (this.lastWidth !== 0 && this.lastHeight !== 0) {
-      this.moveByPixels(idiv(this.lastWidth - this.width, 2),
-                        idiv(this.lastHeight - this.height, 2));
+      const anchor = gfx.getMapZoomAnchor();
+      if (anchor !== null && this.lastScale > 0 && scale !== this.lastScale) {
+        // PORT: not in the C++. A zoom with the mouse wheel: the point of
+        // the map under the mouse stays there. The anchor is that point of
+        // the screen in device pixels; the view starts at the corner of
+        // the screen, so the point was anchor / lastScale pixels of the
+        // map from the corner of the view and is anchor / scale now.
+        this.moveByPixels(Math.round(anchor[0] / this.lastScale - anchor[0] / scale),
+                          Math.round(anchor[1] / this.lastScale - anchor[1] / scale));
+      } else {
+        this.moveByPixels(idiv(this.lastWidth - this.width, 2),
+                          idiv(this.lastHeight - this.height, 2));
+      }
     }
+    this.lastScale = scale;
     this.lastWidth = this.width;
     this.lastHeight = this.height;
     this.clearLandscapeTiles();
+    this.deleteSmoothFrame();
   }
 
   override invalidate(): void {
     super.invalidate();
     this.clearLandscapeTiles();
+    this.deleteSmoothFrame();
   }
 
   redrawMapPos(pos: MapPos): void {
@@ -847,7 +954,8 @@ export class Viewport extends GuiObject implements MapHandler {
     const tileWidth = MAP_TILE_COLS * MAP_TILE_WIDTH;
     const tileHeight = MAP_TILE_ROWS * MAP_TILE_HEIGHT;
 
-    const tileFrame = Graphics.getInstance().createFrame(tileWidth, tileHeight);
+    // PORT: the scale 1 is not in the C++, see Video.createFrame().
+    const tileFrame = Graphics.getInstance().createFrame(tileWidth, tileHeight, 1);
     tileFrame.fillRect(0, 0, tileWidth, tileHeight, Color.black);
 
     const col = (tc * MAP_TILE_COLS + idiv(tr * MAP_TILE_ROWS, 2)) % map.getCols();
@@ -2324,6 +2432,12 @@ export class Viewport extends GuiObject implements MapHandler {
             sprite = 49;
           }
         }
+        // PORT: not in the C++, which marks the building sites only. Where
+        // no building is possible but a flag is, the flag marker of the
+        // map cursor.
+        if (sprite < 0 && game.canBuildFlag(pos, this.interface.getPlayer()!)) {
+          sprite = 47;
+        }
 
         if (sprite >= 0) {
           this.drawGameSprite(lx, ly, sprite);
@@ -2739,6 +2853,7 @@ export class Viewport extends GuiObject implements MapHandler {
   override destroy(): void {
     this.map.delChangeHandler(this);
     this.clearLandscapeTiles();
+    this.deleteSmoothFrame();
     super.destroy();
   }
 

@@ -253,7 +253,7 @@ export class Interface extends GuiObject implements GameManagerHandler {
     this.invertScrolling = false;
     this.largeNumbers = false;
     this.stockBoxOccupied = false;
-    this.autosaveMinutes = 0;
+    this.autosaveMinutes = 5; // PORT: not in the C++. On unless turned off.
     this.autosaveLastTicks = 0;
     this.autosaveLastGameTick = 0;
     this.returnTimeout = 0;
@@ -439,6 +439,14 @@ export class Interface extends GuiObject implements GameManagerHandler {
 
   /* Open popup box */
   openPopup(box: number): void {
+    // PORT: not in the C++. The build menu of the page (build-menu.ts)
+    // takes the place of the build boxes.
+    if (this.popupHook !== null && this.popupHook(box)) {
+      if (this.panel !== null) {
+        this.panel.update();
+      }
+      return;
+    }
     if (this.popup === null) {
       this.popup = new PopupBox(this);
       this.addFloat(this.popup, 0, 0);
@@ -515,7 +523,7 @@ export class Interface extends GuiObject implements GameManagerHandler {
     this.invertScrolling = settingsGet('advanced', 'invert_scrolling', false);
     this.largeNumbers = settingsGet('advanced', 'large_numbers', false);
     this.stockBoxOccupied = settingsGet('advanced', 'stock_box_occupied', false);
-    this.autosaveMinutes = settingsGet('advanced', 'autosave', 0);
+    this.autosaveMinutes = settingsGet('advanced', 'autosave', 5);
     Translation.getInstance().setLanguage(settingsGet('advanced', 'language', ''));
 
     /* Data source of each category, by name (DOS, Amiga, Custom). */
@@ -1333,8 +1341,10 @@ export class Interface extends GuiObject implements GameManagerHandler {
       const mapZoom = Math.fround(Graphics.getInstance().getMapZoom());
       this.viewport.setZoom(mapZoom);
       this.viewport.setSize(
-        Math.trunc(Math.fround(Math.fround(this.width / mapZoom) + 0.5)),
-        Math.trunc(Math.fround(Math.fround(this.height / mapZoom) + 0.5)),
+        // PORT: rounded up, not to the nearest: the view draws its pixels
+        // in one size (Viewport.draw()) and has to reach the edges.
+        Math.ceil(Math.fround(this.width / mapZoom)),
+        Math.ceil(Math.fround(this.height / mapZoom)),
       );
     }
 
@@ -1420,9 +1430,9 @@ export class Interface extends GuiObject implements GameManagerHandler {
     this.invalidate();
   }
 
-  /* Advanced option: off, then every 10, 20, 30 or 60 minutes. */
+  /* Advanced option: off, then every 5, 10, 20, 30 or 60 minutes. */
   nextAutosaveInterval(): void {
-    const intervals = [0, 10, 20, 30, 60];
+    const intervals = [0, 5, 10, 20, 30, 60];
     const count = intervals.length;
     let i = 0;
     while (i < count && intervals[i] !== this.autosaveMinutes) i++;
@@ -1430,9 +1440,12 @@ export class Interface extends GuiObject implements GameManagerHandler {
     this.autosaveLastTicks = EventLoop.getInstance().getTicks();
   }
 
-  /* Save the game into autosave.save of the save folder when the interval
-     has passed (in real time), unless nothing happened since the last
-     save: the game was paused or the game init box is open. */
+  /* Save the game into the autosave files of the save folder when the
+     interval has passed (in real time), unless nothing happened since the
+     last save: the game was paused or the game init box is open. */
+  // PORT: not in the C++. The last three autosaves are kept: autosave-1.save
+  // is the newest, autosave-3.save the oldest. In an online game each
+  // browser saves for itself; saving only reads the game.
   autosave(): void {
     if (this.autosaveMinutes === 0) return;
     const now = EventLoop.getInstance().getTicks();
@@ -1444,8 +1457,7 @@ export class Interface extends GuiObject implements GameManagerHandler {
     }
     this.autosaveLastGameTick = this.game!.getTick();
 
-    const store = GameStore.getInstance();
-    store.save(store.getFolderPath() + '/autosave.save', this.game!);
+    GameStore.getInstance().autosave(this.game!);
   }
 
   /* Count the drawn frames and show the rate of the last second in the top
@@ -1563,7 +1575,25 @@ export class Interface extends GuiObject implements GameManagerHandler {
     this.setRedraw();
   }
 
+  // PORT: not in the C++. The page overlays (build-menu.ts, alerts.ts) add
+  // their keys here and take the place of the build boxes. A key hook that
+  // returns true has used the key. The hooks only read the game and call
+  // the methods of the interface, which issue commands.
+  keyHooks: ((key: number, modifier: number) => boolean)[] = [];
+  popupHook: ((box: number) => boolean) | null = null;
+
+  /* The game init box is open: the keys of the overlays are off. */
+  isGameInitOpen(): boolean {
+    return this.initBox !== null;
+  }
+
   protected override handleKeyPressed(key: number, modifier: number): boolean {
+    for (const hook of this.keyHooks) {
+      if (hook(key, modifier)) {
+        return true;
+      }
+    }
+
     switch (key) {
       /* Interface control */
       case 0x09: {

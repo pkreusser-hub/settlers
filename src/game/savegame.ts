@@ -409,8 +409,22 @@ export interface GameStoreSaveInfo {
   type: GameStoreSaveInfoType;
 }
 
+// PORT: not in the C++. A saved game with the time it was stored and whether
+// it is one of the autosave slots.
+export interface GameStoreSaveEntry extends GameStoreSaveInfo {
+  time: number; // ms since 1970, 0 when unknown
+  autosave: boolean;
+}
+
 const DB_NAME = 'settlers-saves';
 const DB_STORE = 'saves';
+// PORT: not in the C++. The time each save was stored, by path, kept apart
+// from the save text so the file format stays as it is.
+const DB_META = 'meta';
+const DB_VERSION = 2;
+
+/* Autosaves rotate through these files, 1 the newest. */
+export const AUTOSAVE_SLOTS = 3;
 
 // PORT: the folder of the save games is an IndexedDB store of this browser.
 // The C++ reads and writes files at once; here the files are kept in memory
@@ -424,6 +438,7 @@ export class GameStore {
   protected folderPath: string;
   protected savedGames: GameStoreSaveInfo[] = [];
   protected files: Map<string, string> = new Map();
+  protected times: Map<string, number> = new Map();
   protected db: IDBDatabase | null = null;
 
   protected constructor() {
@@ -445,12 +460,32 @@ export class GameStore {
     }
     try {
       this.db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, 1);
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
         request.onupgradeneeded = () => {
-          request.result.createObjectStore(DB_STORE);
+          /* Version 1 has the saves only; they stay as they are. */
+          const names = request.result.objectStoreNames;
+          if (!names.contains(DB_STORE)) {
+            request.result.createObjectStore(DB_STORE);
+          }
+          if (!names.contains(DB_META)) {
+            request.result.createObjectStore(DB_META);
+          }
         };
-        request.onsuccess = () => resolve(request.result);
+        let blocked = false;
+        request.onsuccess = () => {
+          if (blocked) {
+            request.result.close();
+            return;
+          }
+          resolve(request.result);
+        };
         request.onerror = () => reject(request.error);
+        /* Another tab holds the database at an older version: do not wait
+           for it, go on without the stored saves. */
+        request.onblocked = () => {
+          blocked = true;
+          reject(new Error('The saved games are open in another tab.'));
+        };
       });
       const db = this.db;
       await new Promise<void>((resolve, reject) => {
@@ -468,6 +503,28 @@ export class GameStore {
         };
         request.onerror = () => reject(request.error);
       });
+      await new Promise<void>((resolve, reject) => {
+        const request = db.transaction(DB_META, 'readonly').objectStore(DB_META).openCursor();
+        request.onsuccess = () => {
+          const cursor = request.result;
+          if (cursor === null) {
+            resolve();
+            return;
+          }
+          const value = cursor.value as { time?: unknown } | null;
+          if (typeof cursor.key === 'string' && value !== null && typeof value === 'object' &&
+              typeof value.time === 'number') {
+            this.times.set(cursor.key, value.time);
+          }
+          cursor.continue();
+        };
+        request.onerror = () => reject(request.error);
+      });
+      /* Another tab with a newer version of the page wants to upgrade. */
+      db.onversionchange = () => {
+        db.close();
+        if (this.db === db) this.db = null;
+      };
     } catch (e) {
       Log.Warn('savegame', 'Saved games are not kept: ', String(e));
       this.db = null;
@@ -493,23 +550,102 @@ export class GameStore {
 
   /* Store a save game that came from elsewhere (an imported file). */
   putText(path: string, text: string): void {
-    this.files.set(path, text);
-    if (this.db !== null) {
-      try {
-        this.db.transaction(DB_STORE, 'readwrite').objectStore(DB_STORE).put(text, path);
-      } catch (e) {
-        Log.Warn('savegame', 'Unable to store save game: ', String(e));
-      }
-    }
+    this.store(path, text, Date.now());
   }
 
   remove(path: string): void {
     this.files.delete(path);
+    this.times.delete(path);
     if (this.db !== null) {
       try {
-        this.db.transaction(DB_STORE, 'readwrite').objectStore(DB_STORE).delete(path);
+        const tx = this.db.transaction([DB_STORE, DB_META], 'readwrite');
+        tx.objectStore(DB_STORE).delete(path);
+        tx.objectStore(DB_META).delete(path);
       } catch (e) {
         Log.Warn('savegame', 'Unable to delete save game: ', String(e));
+      }
+    }
+  }
+
+  // PORT: not in the C++. The time the save was stored (ms since 1970); 0
+  // for a save from before the times were kept.
+  getSavedTime(path: string): number {
+    return this.times.get(path) ?? 0;
+  }
+
+  // PORT: not in the C++. Whether the file is one of the autosave slots
+  // (or the single autosave.save of earlier versions).
+  isAutosave(path: string): boolean {
+    const fileName = path.substring(path.lastIndexOf('/') + 1);
+    return /^autosave(-\d+)?\.save$/.test(fileName);
+  }
+
+  // PORT: not in the C++. A path in the save folder for the name that no
+  // save has yet: "name", then "name (2)", "name (3)"...
+  getFreePath(name: string): string {
+    const clean = name.replace(/[*?"<>|/\\]/g, '_');
+    let path = this.folderPath + '/' + clean + '.save';
+    for (let n = 2; this.files.has(path); n++) {
+      path = this.folderPath + '/' + clean + ' (' + n + ').save';
+    }
+    return path;
+  }
+
+  // PORT: not in the C++. The saved games as the lists show them: the
+  // autosaves first, then the rest, each group newest first. Saves without
+  // a time come last in their group: autosaves by slot, the rest in the
+  // reverse order of their names (the names with a date sort by time).
+  getSavedGamesByTime(): GameStoreSaveEntry[] {
+    const entries: GameStoreSaveEntry[] = this.getSavedGames().map((info) => ({
+      name: info.name,
+      path: info.path,
+      type: info.type,
+      time: this.getSavedTime(info.path),
+      autosave: this.isAutosave(info.path),
+    }));
+    entries.sort((a, b) => {
+      if (a.autosave !== b.autosave) return a.autosave ? -1 : 1;
+      if (a.time !== b.time) return b.time - a.time;
+      if (a.autosave) return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
+      return a.path < b.path ? 1 : a.path > b.path ? -1 : 0;
+    });
+    return entries;
+  }
+
+  // PORT: not in the C++. Save into autosave-1.save; the autosaves before
+  // move one slot on and the oldest is dropped.
+  autosave(game: Game): boolean {
+    let text: string;
+    try {
+      text = this.write(game);
+    } catch (e) {
+      Log.Error('savegame', 'Failed to save game: ', String(e));
+      return false;
+    }
+    const slot = (n: number): string => this.folderPath + '/autosave-' + n + '.save';
+    for (let n = AUTOSAVE_SLOTS; n > 1; n--) {
+      const from = slot(n - 1);
+      const old = this.files.get(from);
+      if (old !== undefined) {
+        this.store(slot(n), old, this.getSavedTime(from));
+      }
+    }
+    this.store(slot(1), text, Date.now());
+    return true;
+  }
+
+  // PORT: not in the C++. The text and the time it was stored, in memory
+  // and in the database.
+  protected store(path: string, text: string, time: number): void {
+    this.files.set(path, text);
+    this.times.set(path, time);
+    if (this.db !== null) {
+      try {
+        const tx = this.db.transaction([DB_STORE, DB_META], 'readwrite');
+        tx.objectStore(DB_STORE).put(text, path);
+        tx.objectStore(DB_META).put({ time }, path);
+      } catch (e) {
+        Log.Warn('savegame', 'Unable to store save game: ', String(e));
       }
     }
   }

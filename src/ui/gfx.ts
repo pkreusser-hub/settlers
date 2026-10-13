@@ -366,12 +366,13 @@ export class Frame {
      backing surface is created, otherwise the same surface
      as dest is used. */
   // Frame(video, width, height) and Frame(video, video_frame).
-  constructor(video: Video, width: number, height: number);
+  // PORT: scale is not in the C++, see Video.createFrame().
+  constructor(video: Video, width: number, height: number, scale?: number);
   constructor(video: Video, videoFrame: VideoFrame);
-  constructor(video: Video, widthOrVideoFrame: number | VideoFrame, height?: number) {
+  constructor(video: Video, widthOrVideoFrame: number | VideoFrame, height?: number, scale = 0) {
     this.video = video;
     if (typeof widthOrVideoFrame === 'number') {
-      this.videoFrame = video.createFrame(widthOrVideoFrame, height as number);
+      this.videoFrame = video.createFrame(widthOrVideoFrame, height as number, scale);
       this.owner = true;
     } else {
       this.videoFrame = widthOrVideoFrame;
@@ -772,6 +773,22 @@ export class Frame {
     if (this.videoFrame === null || src.videoFrame === null) return;
     this.video.drawFrameScaled(dx, dy, dw, dh, this.videoFrame, src.videoFrame, w, h);
   }
+
+  // PORT: not in the C++. Draw the w x h pixels of the canvas of src at
+  // dx, dy, each pixelSize pixels of the canvas of this frame large (see
+  // Video.drawFrameZoomed()).
+  drawFrameZoomed(
+    dx: number,
+    dy: number,
+    src: Frame,
+    w: number,
+    h: number,
+    pixelSize: number,
+    smooth = false,
+  ): void {
+    if (this.videoFrame === null || src.videoFrame === null) return;
+    this.video.drawFrameZoomed(dx, dy, this.videoFrame, src.videoFrame, w, h, pixelSize, smooth);
+  }
 }
 
 export class Graphics {
@@ -779,6 +796,14 @@ export class Graphics {
   protected video: Video;
   /* Magnification of the map view on top of the screen zoom. */
   protected mapZoom: number;
+  // PORT: not in the C++. Device pixels per pixel of the map view (the map
+  // zoom times the scale of the screen, without the rounding of the two),
+  // whether the map view is magnified with the pixel-art filter, and the
+  // point of the screen (in device pixels) that a change of the map scale
+  // keeps in place, null for the middle of the view.
+  protected mapScale = 1;
+  protected mapSmooth = false;
+  protected mapZoomAnchor: [number, number] | null = null;
   /* The font of the texts; the font sprites of the game data without it. */
   protected font: Font | null;
 
@@ -848,8 +873,9 @@ export class Graphics {
   }
 
   /* Frame functions */
-  createFrame(width: number, height: number): Frame {
-    return new Frame(this.video, width, height);
+  // PORT: scale is not in the C++, see Video.createFrame().
+  createFrame(width: number, height: number, scale = 0): Frame {
+    return new Frame(this.video, width, height, scale);
   }
 
   /* Screen functions */
@@ -898,6 +924,45 @@ export class Graphics {
 
   setMapZoom(zoom: number): void {
     this.mapZoom = zoom;
+  }
+
+  // PORT: not in the C++, as the fields of these.
+  /* The size of the screen frame. */
+  getLogicalSize(): [number, number] {
+    return this.video.getLogicalSize();
+  }
+
+  /* Device pixels per pixel of the screen frame (panel and boxes). */
+  getUiScale(): number {
+    return this.video.getOutputScale();
+  }
+
+  setUiScale(scale: number): boolean {
+    return this.video.setOutputScale(scale);
+  }
+
+  getMapScale(): number {
+    return this.mapScale;
+  }
+
+  setMapScale(scale: number): void {
+    this.mapScale = scale;
+  }
+
+  getMapSmooth(): boolean {
+    return this.mapSmooth;
+  }
+
+  setMapSmooth(smooth: boolean): void {
+    this.mapSmooth = smooth;
+  }
+
+  getMapZoomAnchor(): [number, number] | null {
+    return this.mapZoomAnchor;
+  }
+
+  setMapZoomAnchor(anchor: [number, number] | null): void {
+    this.mapZoomAnchor = anchor;
   }
 
   // PORT: out-parameters become the result [fx, fy].

@@ -1,0 +1,109 @@
+/* The saved games of this browser: load, download, delete, import. Builds
+   on the classes of overlay.css. */
+
+.sv-backdrop {
+  z-index: 11;
+  align-items: flex-start;
+}
+
+.sv-panel {
+  max-width: 560px;
+  margin: auto;
+}
+
+.sv-heading {
+  margin: 18px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9d9886;
+}
+
+.sv-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid #55533f;
+  border-radius: 4px;
+  background: #1b1d15;
+}
+
+.sv-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 8px 10px;
+}
+
+.sv-row + .sv-row {
+  border-top: 1px solid #3a3a2b;
+}
+
+.sv-info {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.sv-name {
+  display: block;
+  overflow-wrap: anywhere;
+  color: #f3eedd;
+}
+
+.sv-time,
+.sv-ask {
+  display: block;
+  font-size: 13px;
+  color: #9d9886;
+}
+
+.sv-ask {
+  color: #f0a08c;
+}
+
+.sv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sv-panel .sv-actions .ov-button,
+.sv-panel .sv-foot .ov-button {
+  width: auto;
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 14px;
+}
+
+.sv-button-danger {
+  background: #6b3326;
+  border-color: #a25a47;
+}
+
+.sv-button-danger:hover {
+  background: #7d3c2d;
+}
+
+.sv-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.sv-file {
+  display: none;
+}
+
+@media (max-width: 420px) {
+  .sv-actions {
+    flex: 1 1 100%;
+  }
+
+  .sv-actions .ov-button {
+    flex: 1;
+  }
+}

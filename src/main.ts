@@ -26,7 +26,9 @@ import { GameManager } from './game/game-manager';
 import './net/commands';
 import { Log } from './game/misc';
 import { GameStore } from './game/savegame';
+import { initAlerts } from './ui/alerts';
 import { Audio, AudioTypeMidi } from './ui/audio';
+import { initBuildMenu } from './ui/build-menu';
 import { openLobby } from './net/lobby';
 import { loadGameData } from './ui/data-picker';
 import { EventLoop } from './ui/event-loop';
@@ -124,6 +126,8 @@ async function main(): Promise<boolean> {
 
   // PORT: page controls for speed and zoom, not in the C++.
   new Hud(gameManager, iface);
+  initBuildMenu(iface, gameManager);
+  initAlerts(iface, gameManager);
 
   // PORT: not in the C++. The lobby lies over the game: a solo game goes on
   // as above, an online game replaces the current game when it starts.

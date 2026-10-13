@@ -492,7 +492,10 @@ export class EventLoopDOM extends EventLoop {
         if (event.ctrlKey) {
           this.stepUiScale(steps);
         } else {
-          this.stepMapScale(steps);
+          // PORT: not in the C++. The point of the map under the mouse
+          // stays there.
+          const [ex, ey] = this.position(event);
+          this.stepMapScale(steps, [ex * this.screenFactorX, ey * this.screenFactorY]);
         }
       }
     }
@@ -714,7 +717,13 @@ export class EventLoopDOM extends EventLoop {
       const observer = new ResizeObserver(() => {
         if (this.running) this.handleResize();
       });
-      observer.observe(canvas);
+      // PORT: the size in device pixels where the browser reports it: it
+      // also changes with the pixel ratio alone (see Video).
+      try {
+        observer.observe(canvas, { box: 'device-pixel-content-box' });
+      } catch {
+        observer.observe(canvas);
+      }
       this.listeners.push(() => observer.disconnect());
     }
     // PORT: SDL_EVENT_QUIT (closing the window asks with the quit box of
@@ -784,8 +793,13 @@ export class EventLoopDOM extends EventLoop {
     }
   }
 
-  static readonly uiScales = [1, 1.5, 2, 2.5, 3, 4, 5, 6];
-  static readonly mapScales = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6, 8];
+  // PORT: not in the C++. The scales are device pixels per pixel of the
+  // game, so the whole numbers give pixels that are all the same size, on
+  // any display. The others are kept where a step would double the size
+  // (1.5), and below 1, where the map is an overview and pixels are left
+  // out anyway.
+  static readonly uiScales = [1, 1.5, 2, 3, 4, 5, 6];
+  static readonly mapScales = [0.5, 0.75, 1, 1.5, 2, 3, 4, 5, 6, 8];
 
   getUiScale(): number {
     return this.uiScale;
@@ -793,6 +807,20 @@ export class EventLoopDOM extends EventLoop {
 
   getMapScale(): number {
     return this.mapScale;
+  }
+
+  // PORT: not in the C++. The "Smooth" mode: the map view is magnified with
+  // a pixel-art filter (see Viewport.draw()).
+  protected smooth = false;
+
+  getSmooth(): boolean {
+    return this.smooth;
+  }
+
+  setSmooth(smooth: boolean): void {
+    this.smooth = smooth;
+    this.storeScales();
+    this.applyZoom();
   }
 
   /* The largest scale that still leaves room for the 352 pixel panel and
@@ -810,31 +838,38 @@ export class EventLoopDOM extends EventLoop {
     this.applyZoom();
   }
 
-  setMapScale(scale: number): void {
+  /* anchor: the point of the screen, in device pixels, where the map stays
+     in place; the middle of the map view without it. */
+  setMapScale(scale: number, anchor: [number, number] | null = null): void {
     this.mapScale = nearest(EventLoopDOM.mapScales, scale);
     this.storeScales();
+    const gfx = Graphics.getInstance();
+    gfx.setMapZoomAnchor(anchor);
     this.applyZoom();
+    gfx.setMapZoomAnchor(null);
   }
 
   stepUiScale(steps: number): void {
     this.setUiScale(step(EventLoopDOM.uiScales, this.uiScale, steps));
   }
 
-  stepMapScale(steps: number): void {
-    this.setMapScale(step(EventLoopDOM.mapScales, this.mapScale, steps));
+  stepMapScale(steps: number, anchor: [number, number] | null = null): void {
+    this.setMapScale(step(EventLoopDOM.mapScales, this.mapScale, steps), anchor);
   }
 
-  /* The scales of the last visit, or ones that make a pixel of the game
-     about two CSS pixels for the panel and one and a half for the map. */
+  /* The scales of the last visit, or the whole numbers of device pixels
+     that make a pixel of the game about two CSS pixels for the panel and
+     one and a half for the map. */
   protected loadScales(): void {
     const ratio = window.devicePixelRatio || 1;
-    let ui = 2 * ratio;
-    let map = 1.5 * ratio;
+    let ui = Math.max(1, Math.round(2 * ratio));
+    let map = Math.max(1, Math.round(1.5 * ratio));
     try {
       const stored = JSON.parse(localStorage.getItem('settlers.scales') ?? 'null');
       if (stored !== null && typeof stored.ui === 'number' && typeof stored.map === 'number') {
         ui = stored.ui;
         map = stored.map;
+        this.smooth = stored.smooth === true;
       }
     } catch {
       // No storage: the defaults.
@@ -847,7 +882,10 @@ export class EventLoopDOM extends EventLoop {
 
   protected storeScales(): void {
     try {
-      localStorage.setItem('settlers.scales', JSON.stringify({ ui: this.uiScale, map: this.mapScale }));
+      localStorage.setItem(
+        'settlers.scales',
+        JSON.stringify({ ui: this.uiScale, map: this.mapScale, smooth: this.smooth }),
+      );
     } catch {
       // No storage: the scales last until the page is closed.
     }
@@ -861,15 +899,17 @@ export class EventLoopDOM extends EventLoop {
       this.scalesLoaded = true;
       this.loadScales();
     }
-    gfx.setZoomFactor(Math.fround(1 / this.uiScale));
+    // PORT: the canvas keeps the size of the display in device pixels and
+    // the screen frame gets the scale of the panel (see Video), so the map
+    // is magnified once, from its own pixels to device pixels.
+    gfx.setUiScale(this.uiScale);
     this.zoomFactor = gfx.getZoomFactor();
     gfx.setMapZoom(Math.fround(this.mapScale * this.zoomFactor));
+    gfx.setMapScale(this.mapScale);
+    gfx.setMapSmooth(this.smooth);
 
-    const [width, height] = gfx.getResolution();
-    this.notifyResize(
-      Math.trunc(Math.fround(width * this.zoomFactor)),
-      Math.trunc(Math.fround(height * this.zoomFactor)),
-    );
+    const [width, height] = gfx.getLogicalSize();
+    this.notifyResize(width, height);
   }
 
   getTicks(): number {

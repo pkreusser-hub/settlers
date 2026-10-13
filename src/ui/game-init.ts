@@ -119,10 +119,13 @@ class RandomInput extends TextInput {
 }
 
 // PORT: not in the C++. While the host of an online game sets it up, the
-// box only offers a custom game with two human players (the host and the
-// guest) and hands the result to start() instead of starting it. start()
-// returns false to keep the box open; cancel() is the exit button.
+// box only offers a custom game whose first `humans` players are people
+// (the host and the guests) and hands the result to start() instead of
+// starting it. start() returns false to keep the box open; cancel() is the
+// exit button.
 export interface OnlineHostHooks {
+  /* The host and the guests: 2 to 4. */
+  humans: number;
   start(mission: PGameInfo): boolean;
   /* Go on from the save game of this path. */
   startSaved(path: string): boolean;
@@ -207,8 +210,11 @@ export class GameInitBox extends GuiObject {
     this.customMission.addPlayer(12, { red: 0x00, green: 0xe3, blue: 0xe3 }, 40, 40, 40);
     this.online = onlineHost;
     if (this.online !== null) {
-      /* The guest: a human player ('Friend') with the host's values. */
-      this.customMission.addPlayer(13, { red: 0xcf, green: 0x63, blue: 0x63 }, 40, 40, 40);
+      /* The guests: human players ('Friend') with the host's values. */
+      for (let i = 1; i < this.online.humans; i++) {
+        this.customMission.addPlayer(13, { red: 0, green: 0, blue: 0 }, 40, 40, 40);
+      }
+      this.customMission.setDefaultColors();
     } else {
       this.customMission.addPlayer(1, { red: 0xcf, green: 0x63, blue: 0x63 }, 20, 30, 40);
     }
@@ -561,14 +567,21 @@ export class GameInitBox extends GuiObject {
         if (str.length === 16) {
           this.customMission.setRandomBase(this.randomInput.getRandom());
           if (this.online !== null) {
-            /* The random base made player 1 a computer player: it is the
-               guest, with the host's values. */
+            /* The random base made the players after the host computer
+               players, two to four of them: the first are the guests, with
+               the host's values. */
             const host: PPlayerInfo = this.customMission.getPlayer(0);
-            const guest: PPlayerInfo = this.customMission.getPlayer(1);
-            guest.setCharacter(13);
-            guest.setIntelligence(host.getIntelligence());
-            guest.setSupplies(host.getSupplies());
-            guest.setReproduction(host.getReproduction());
+            for (let i = 1; i < this.online.humans; i++) {
+              if (i >= this.customMission.getPlayerCount()) {
+                this.customMission.addPlayer(13, { red: 0, green: 0, blue: 0 }, 40, 40, 40);
+              }
+              const guest: PPlayerInfo = this.customMission.getPlayer(i);
+              guest.setCharacter(13);
+              guest.setIntelligence(host.getIntelligence());
+              guest.setSupplies(host.getSupplies());
+              guest.setReproduction(host.getReproduction());
+            }
+            this.customMission.setDefaultColors();
           }
           this.mission = this.customMission;
           this.generateMapPreview();
@@ -692,8 +705,8 @@ export class GameInitBox extends GuiObject {
       if (playerIndex >= this.mission.getPlayerCount()) {
         return true;
       }
-      if (this.online !== null && playerIndex < 2) {
-        /* The host and the guest keep their faces. */
+      if (this.online !== null && playerIndex < this.online.humans) {
+        /* The host and the guests keep their faces. */
         return true;
       }
       const player: PPlayerInfo = this.mission.getPlayer(playerIndex);
@@ -706,7 +719,7 @@ export class GameInitBox extends GuiObject {
         const player: PPlayerInfo = this.mission.getPlayer(playerIndex);
         player.setCharacter(this.getNextCharacter(playerIndex));
       } else {
-        if (playerIndex > (this.online !== null ? 1 : 0)) {
+        if (playerIndex > (this.online !== null ? this.online.humans - 1 : 0)) {
           this.mission.removePlayer(playerIndex);
           this.mission.setDefaultColors();
         }

@@ -1,6 +1,6 @@
 # Settlers web port
 
-A TypeScript port of Freeserf (the open-source reimplementation of The Settlers 1) that runs in the browser with the original `SPAE.PA` data file. The goal is online two-player games using deterministic lockstep over a PeerJS data channel: both browsers run the same simulation and only player commands cross the network.
+A TypeScript port of Freeserf (the open-source reimplementation of The Settlers 1) that runs in the browser with the original `SPAE.PA` data file. The goal is online games for up to four players using deterministic lockstep over a PeerJS data channel: both browsers run the same simulation and only player commands cross the network.
 
 - `ref/freeserf/src/` is the C++ reference (git-ignored). It is the source of truth for behaviour.
 - `src/data/` reads SPAE.PA. `src/game/` is the simulation. UI and netcode come later.

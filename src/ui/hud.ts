@@ -6,16 +6,20 @@ import './hud.css';
 import { DEFAULT_GAME_SPEED } from '../game/game';
 import type { GameManager } from '../game/game-manager';
 import { GameStore } from '../game/savegame';
-import { hasCommandSink } from '../net/command';
 import { cmdSetPaused, cmdSetSpeed } from '../net/commands';
 import { EventLoop, EventLoopDOM } from './event-loop';
 import type { Interface } from './interface';
+import { openSavesPanel } from './saves-panel';
+import { ViewportLayer } from './viewport';
 
-const SPEEDS = [1, 2, 4];
+// PORT: not in the C++. 8x is speed 16 of the game, which allows up to 40.
+const SPEEDS = [1, 2, 4, 8];
 
 export class Hud {
   protected root: HTMLElement;
   protected speedButtons: HTMLButtonElement[] = [];
+  protected spotsButton: HTMLButtonElement;
+  protected smoothButton: HTMLButtonElement;
   protected pauseButton: HTMLButtonElement;
   protected saveButton: HTMLButtonElement;
   protected loadButton: HTMLButtonElement;
@@ -45,7 +49,7 @@ export class Hud {
       const game = this.gameManager.getCurrentGame();
       if (game && this.save()) this.savedUntil = Date.now() + 1500;
     });
-    this.loadButton = this.button('Load', 'Go on from a saved game', () => this.iface.openGameLoad());
+    this.loadButton = this.button('Load', 'Saved games: load, download, import', () => openSavesPanel(this.iface, this.gameManager));
     file.append(this.saveButton, this.loadButton);
 
     const map = this.group('Map');
@@ -53,6 +57,17 @@ export class Hud {
       this.button('−', 'Zoom the map out', () => this.loop()?.stepMapScale(-1)),
       this.button('+', 'Zoom the map in', () => this.loop()?.stepMapScale(1)),
     );
+    // PORT: not in the C++. The layer of the possible buildings is the
+    // C++'s (key B); the button shows and switches it.
+    this.spotsButton = this.button('Spots', 'Show what can be built where (B)', () => {
+      this.iface.getViewport()?.switchLayer(ViewportLayer.LayerBuilds);
+    });
+    // PORT: not in the C++. Pixel-art magnification of the map view.
+    this.smoothButton = this.button('Smooth', 'Smooth the pixels of the map', () => {
+      const loop = this.loop();
+      if (loop) loop.setSmooth(!loop.getSmooth());
+    });
+    map.append(this.spotsButton, this.smoothButton);
 
     const ui = this.group('Panel');
     ui.append(
@@ -118,7 +133,12 @@ export class Hud {
     this.pauseButton.setAttribute('aria-pressed', String(paused));
     this.pauseButton.textContent = paused ? 'Paused' : 'Pause';
     this.saveButton.textContent = Date.now() < this.savedUntil ? 'Saved' : 'Save';
-    /* An online game goes on from a save through "Host online game". */
-    this.loadButton.disabled = hasCommandSink();
+    const viewport = this.iface.getViewport();
+    this.spotsButton.disabled = viewport === null;
+    this.spotsButton.setAttribute(
+      'aria-pressed',
+      String(viewport !== null && viewport.hasLayer(ViewportLayer.LayerBuilds)),
+    );
+    this.smoothButton.setAttribute('aria-pressed', String(this.loop()?.getSmooth() ?? false));
   }
 }

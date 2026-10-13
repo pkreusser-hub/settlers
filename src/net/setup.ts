@@ -1,27 +1,29 @@
 // The game of an online match: made by the host from the game init screen,
-// sent to the guest, and built the same way on both sides.
+// sent to the guests, and built the same way on all sides.
 
 import { AI } from '../game/ai';
 import { Game, GameGameType } from '../game/game';
 import { defColor, GameInfo, PlayerInfo } from '../game/mission';
 import { Random } from '../game/random';
+import { MAX_HUMANS } from './protocol';
 import type { GameSetup, NetPlayer } from './protocol';
 
-// Faces of the two human players (mission.ts: 'You' and 'Friend'). A face
+// Faces of the human players (mission.ts: 'You' and 'Friend'). A face
 // below 12 makes Player.initView() mark the player as a computer player.
 export const HOST_FACE = 12;
 export const GUEST_FACE = 13;
 
-/* The players of an online game: the first two of `info` become the host
-   and the guest whatever face they had, the rest stay computer players. */
-export function makeSetup(info: GameInfo, gameSeed: Random): GameSetup {
+/* The players of an online game: the first `humans` of `info` become the
+   host and the guests whatever face they had, the rest stay computer
+   players. */
+export function makeSetup(info: GameInfo, gameSeed: Random, humans = 2): GameSetup {
   const players: NetPlayer[] = [];
-  for (let i = 0; i < info.getPlayerCount() || i < 2; i++) {
+  for (let i = 0; i < info.getPlayerCount() || i < humans; i++) {
     const p = i < info.getPlayerCount() ? info.getPlayer(i) : null;
     let face = p !== null ? p.getFace() : GUEST_FACE;
     if (i === 0) face = HOST_FACE;
-    if (i === 1) face = GUEST_FACE;
-    if (i >= 2 && (face < 1 || face >= HOST_FACE)) {
+    else if (i < humans) face = GUEST_FACE;
+    else if (face < 1 || face >= HOST_FACE) {
       /* A computer player needs a computer face. */
       face = i - 1;
     }
@@ -41,6 +43,7 @@ export function makeSetup(info: GameInfo, gameSeed: Random): GameSetup {
     gameSeed: gameSeed.toString(),
     gameType: GameGameType.GameTypeTwoPlayers,
     level: 0,
+    humans,
     players,
   };
 }
@@ -60,12 +63,13 @@ export function isValidSetup(setup: GameSetup): boolean {
   if (!isInt(setup.mapSize, 3, 10)) return false;
   if (!isSeed(setup.mapSeed) || !isSeed(setup.gameSeed)) return false;
   if (!isInt(setup.gameType, 0, 4) || !isInt(setup.level, 0, 64)) return false;
+  if (!isInt(setup.humans, 2, MAX_HUMANS)) return false;
   if (!Array.isArray(setup.players)) return false;
-  if (setup.players.length < 2 || setup.players.length > 4) return false;
+  if (setup.players.length < setup.humans || setup.players.length > 4) return false;
   for (let i = 0; i < setup.players.length; i++) {
     const p = setup.players[i];
     if (typeof p !== 'object' || p === null) return false;
-    const human = i < 2;
+    const human = i < setup.humans;
     if (!isInt(p.face, human ? HOST_FACE : 1, human ? GUEST_FACE : HOST_FACE - 1)) return false;
     if (!isInt(p.intelligence, 0, 40)) return false;
     if (!isInt(p.supplies, 0, 40)) return false;

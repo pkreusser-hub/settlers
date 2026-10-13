@@ -1,0 +1,160 @@
+/* Chat log, chat input and map marks of an online game. */
+
+#chat {
+  position: fixed;
+  left: 8px;
+  /* Below the page controls, which reach the left edge on a narrow page. */
+  top: 52px;
+  z-index: 6;
+  width: min(360px, calc(100vw - 16px));
+  font: 14px/1.35 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: #ece6c8;
+  pointer-events: none;
+}
+
+#chat[hidden],
+#chat .chat-form[hidden] {
+  display: none;
+}
+
+#chat .chat-log {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+#chat .chat-line {
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 3px 8px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  background: rgba(24, 28, 18, 0.82);
+  border: 1px solid #55603c;
+  border-radius: 4px;
+  transition: opacity 1.5s;
+}
+
+#chat .chat-note {
+  color: #c9c3a4;
+  font-style: italic;
+}
+
+#chat .chat-who {
+  font-weight: 600;
+}
+
+#chat .chat-jump {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+#chat .chat-jump:hover {
+  background: rgba(59, 70, 40, 0.95);
+}
+
+#chat .chat-jump:focus-visible {
+  outline: 2px solid #e2c770;
+  outline-offset: 1px;
+}
+
+/* Old lines are gone, and back while the input is open. */
+#chat .chat-old {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#chat.chat-open .chat-old {
+  opacity: 0.75;
+  transition: none;
+}
+
+#chat.chat-open .chat-old.chat-jump {
+  pointer-events: auto;
+}
+
+#chat .chat-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  pointer-events: auto;
+}
+
+#chat .chat-input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  font: inherit;
+  color: #f4efd8;
+  background: rgba(24, 28, 18, 0.95);
+  border: 1px solid #e2c770;
+  border-radius: 4px;
+  outline: none;
+}
+
+#chat .chat-hint {
+  padding: 2px 6px;
+  font-size: 12px;
+  color: #c9c3a4;
+  white-space: nowrap;
+  background: rgba(24, 28, 18, 0.82);
+  border-radius: 4px;
+}
+
+#chat-marks {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 4;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+/* A ring around the place, in the colour of the player who pointed. */
+.chat-mark {
+  position: absolute;
+  left: -18px;
+  top: -18px;
+  width: 36px;
+  height: 36px;
+  box-sizing: border-box;
+  border: 3px solid currentColor;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.7), inset 0 0 0 2px rgba(0, 0, 0, 0.7);
+}
+
+.chat-mark[hidden] {
+  display: none;
+}
+
+.chat-mark::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border: 3px solid currentColor;
+  border-radius: 50%;
+  animation: chat-mark-pulse 1.2s ease-out infinite;
+}
+
+@keyframes chat-mark-pulse {
+  from { transform: scale(1); opacity: 0.9; }
+  to { transform: scale(2.4); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-mark::after {
+    animation: none;
+  }
+
+  #chat .chat-line {
+    transition: none;
+  }
+}

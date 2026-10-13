@@ -1,0 +1,500 @@
+/* Page overlays of the game: build menu, hint line, alerts and the
+   production chains view. In the style of hud.css. Every size is in em of
+   .gx, so one variable scales them all: set --overlay-scale on the page. */
+
+.gx {
+  font: calc(13px * var(--overlay-scale, 1)) / 1.3 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: #ece6c8;
+}
+
+.gx button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.gx button:focus-visible {
+  outline: 2px solid #e2c770;
+  outline-offset: 1px;
+}
+
+.gx canvas {
+  image-rendering: pixelated;
+  flex: none;
+}
+
+.gx .gx-res {
+  width: 1.25em;
+  height: 1.25em;
+  vertical-align: -0.3em;
+}
+
+.gx kbd {
+  display: inline-block;
+  min-width: 1.1em;
+  padding: 0 0.3em;
+  font: 600 0.85em/1.5 ui-monospace, Consolas, monospace;
+  text-align: center;
+  color: #1b1d12;
+  background: #e2c770;
+  border-radius: 0.25em;
+}
+
+/* The column at the left edge: alerts above, build menu below. */
+#gx-left {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  bottom: 8px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5em;
+  width: min(27em, calc(100vw - 16px));
+  pointer-events: none;
+}
+
+#gx-left > * {
+  pointer-events: auto;
+}
+
+.gx-box {
+  background: rgba(24, 28, 18, 0.93);
+  border: 1px solid #55603c;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+.gx-btn {
+  min-height: 2.2em;
+  padding: 0 0.7em;
+  background: #3b4628;
+  border: 1px solid #55603c;
+  border-radius: 4px;
+}
+
+.gx-btn:hover {
+  background: #4a5733;
+}
+
+/* Hint line */
+#gx-hint {
+  position: fixed;
+  left: 50%;
+  bottom: 22%;
+  z-index: 6;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  padding: 0.5em 0.9em;
+  background: rgba(24, 28, 18, 0.95);
+  border: 1px solid #e2c770;
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+#gx-hint[hidden] {
+  display: none;
+}
+
+/* Build menu */
+#gx-build {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+#gx-build[hidden] {
+  display: none;
+}
+
+.bm-head,
+.bm-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.4em;
+}
+
+.bm-head {
+  border-bottom: 1px solid #55603c;
+}
+
+.bm-foot {
+  border-top: 1px solid #55603c;
+  flex-wrap: wrap;
+}
+
+.bm-title {
+  flex: 1;
+  margin: 0;
+  padding-left: 0.3em;
+  font-size: 1.1em;
+  font-weight: 600;
+  color: #f1dc9a;
+}
+
+.bm-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.2em 0.4em 0.4em;
+}
+
+.bm-group {
+  margin: 0.6em 0 0.2em 0.3em;
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #a9b48a;
+}
+
+.bm-empty {
+  margin: 0.8em 0.5em;
+  color: #c9c3a4;
+}
+
+.bm-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.3em 0.5em;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+.bm-row:hover,
+.bm-row:focus-visible {
+  background: #3b4628;
+  border-color: #55603c;
+}
+
+.bm-pic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 3em;
+  height: 3em;
+}
+
+.gx .gx-bld {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.bm-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: 0.1em;
+}
+
+.bm-name {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  font-weight: 600;
+  color: #fff6d8;
+}
+
+.bm-name .bm-cost {
+  margin-left: auto;
+  font-weight: 400;
+  color: #c9c3a4;
+  white-space: nowrap;
+}
+
+.bm-line {
+  color: #d6d0b4;
+}
+
+/* Alerts */
+#gx-alerts {
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+  max-height: 45%;
+  flex: none;
+}
+
+#gx-alerts[hidden] {
+  display: none;
+}
+
+.al-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  min-height: 2.3em;
+  padding: 0 0.7em;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+}
+
+.al-toggle:hover {
+  background: #3b4628;
+}
+
+.al-count {
+  min-width: 1.5em;
+  padding: 0 0.3em;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+  color: #1b1d12;
+  background: #9aa67c;
+  border-radius: 0.75em;
+}
+
+.al-count.al-some {
+  background: #f0a23a;
+}
+
+.al-list {
+  min-height: 0;
+  margin: 0;
+  padding: 0 0.3em 0.3em;
+  overflow-y: auto;
+  list-style: none;
+  border-top: 1px solid #55603c;
+}
+
+.al-list[hidden] {
+  display: none;
+}
+
+.al-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.25em 0.4em;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+.al-item:hover,
+.al-item:focus-visible {
+  background: #3b4628;
+  border-color: #55603c;
+}
+
+.al-pic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.8em;
+  height: 1.8em;
+}
+
+.al-none {
+  margin: 0.5em 0.4em 0.2em;
+  color: #c9c3a4;
+}
+
+/* Production chains */
+#gx-chains {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  box-sizing: border-box;
+  background: rgba(8, 10, 6, 0.8);
+}
+
+#gx-chains[hidden] {
+  display: none;
+}
+
+.ch-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 96em;
+  max-height: 100%;
+  box-sizing: border-box;
+  background: #1c2015;
+}
+
+.ch-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4em 1em;
+  padding: 0.6em 0.8em;
+  border-bottom: 1px solid #55603c;
+}
+
+.ch-title {
+  margin: 0;
+  font-size: 1.3em;
+  font-weight: 600;
+  color: #f1dc9a;
+}
+
+.ch-sub {
+  flex: 1;
+  min-width: 14em;
+  color: #c9c3a4;
+}
+
+.ch-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.8em;
+}
+
+.ch-diagram {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(9, 6.8em);
+  grid-auto-rows: minmax(5.6em, auto);
+  gap: 0.8em 1.6em;
+  width: max-content;
+  margin: 0 auto;
+}
+
+.ch-lines {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+.ch-lines path {
+  fill: none;
+  stroke: #7d8a5c;
+  stroke-width: 1.5;
+}
+
+.ch-node {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15em;
+  padding: 0.3em 0.2em;
+  text-align: center;
+  background: #2a301f;
+  border: 1px solid #55603c;
+  border-radius: 6px;
+}
+
+.ch-node.ch-pseudo {
+  background: #242a33;
+  border-style: dashed;
+  border-color: #5e6c80;
+}
+
+.ch-pic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.4em;
+  gap: 0.1em;
+}
+
+.ch-pic .gx-bld {
+  max-height: 2.4em;
+  max-width: 3.4em;
+}
+
+.ch-name {
+  font-weight: 600;
+  line-height: 1.15;
+  color: #fff6d8;
+}
+
+.ch-out {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.1em;
+  min-height: 1.3em;
+  color: #c9c3a4;
+}
+
+.ch-count {
+  font-size: 0.9em;
+  color: #c9c3a4;
+}
+
+.ch-count.ch-has {
+  color: #e2c770;
+}
+
+/* A node is pointed at or has the focus: the rest steps back. */
+.ch-diagram.ch-active .ch-node {
+  opacity: 0.35;
+}
+
+.ch-diagram.ch-active .ch-node.ch-on,
+.ch-diagram.ch-active .ch-node.ch-in,
+.ch-diagram.ch-active .ch-node.ch-outn {
+  opacity: 1;
+}
+
+.ch-diagram.ch-active .ch-node.ch-on {
+  border-color: #fff6d8;
+  background: #3b4628;
+}
+
+.ch-diagram.ch-active .ch-node.ch-in {
+  border-color: #6fb7e8;
+}
+
+.ch-diagram.ch-active .ch-node.ch-outn {
+  border-color: #e2c770;
+}
+
+.ch-diagram.ch-active .ch-lines path {
+  opacity: 0.15;
+}
+
+.ch-diagram.ch-active .ch-lines path.ch-edge-in {
+  opacity: 1;
+  stroke: #6fb7e8;
+  stroke-width: 2.5;
+}
+
+.ch-diagram.ch-active .ch-lines path.ch-edge-out {
+  opacity: 1;
+  stroke: #e2c770;
+  stroke-width: 2.5;
+}
+
+.ch-detail {
+  min-height: 2.8em;
+  padding: 0.6em 0.8em;
+  border-top: 1px solid #55603c;
+  color: #ece6c8;
+}
+
+.ch-key-in {
+  color: #6fb7e8;
+}
+
+.ch-key-out {
+  color: #e2c770;
+}

@@ -51,7 +51,9 @@ export class ListSavedFiles extends GuiObject {
     this.colorBackground = Color.black;
 
     this.saveGame = GameStore.getInstance();
-    this.items = this.saveGame.getSavedGames();
+    // PORT: not in the C++, which lists the files by name. The autosaves
+    // first, then the rest newest first, as the saves panel of the page.
+    this.items = this.saveGame.getSavedGamesByTime();
     this.firstVisibleItem = 0;
     this.selectedItem = -1;
   }
@@ -59,7 +61,7 @@ export class ListSavedFiles extends GuiObject {
   // PORT: not in the C++, where the list is read once. Read the saved
   // games again, a game may have been saved since.
   update(): void {
-    this.items = this.saveGame.getSavedGames();
+    this.items = this.saveGame.getSavedGamesByTime();
     this.firstVisibleItem = 0;
     this.selectedItem = -1;
     this.setRedraw();

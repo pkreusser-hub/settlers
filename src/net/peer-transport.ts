@@ -1,6 +1,7 @@
-// The PeerJS implementation of Transport: a WebRTC data channel between two
-// browsers, set up through the public PeerJS broker. A room code maps to
-// the host's peer id.
+// The PeerJS implementation of Transport: a WebRTC data channel between the
+// host and one guest, set up through the public PeerJS broker. A room code
+// maps to the host's peer id. The room stays open while the host plays, so
+// that a guest can come back.
 
 import { Peer } from 'peerjs';
 import type { DataConnection } from 'peerjs';
@@ -16,6 +17,8 @@ export const ROOM_CODE_LENGTH = 6;
 const CONNECT_TIMEOUT_MS = 20000;
 // A taken room code is replaced by another this many times.
 const MAX_CODE_ATTEMPTS = 5;
+// The host asks the broker for its room again after this long.
+const BROKER_RETRY_MS = 3000;
 
 export type NetError =
   // No host with that code.
@@ -52,10 +55,13 @@ class PeerTransport implements Transport {
   protected peer: Peer;
   protected conn: DataConnection;
   protected closed = false;
+  // A guest's peer exists for its one channel; the host's peer is the room.
+  protected ownsPeer: boolean;
 
-  constructor(peer: Peer, conn: DataConnection) {
+  constructor(peer: Peer, conn: DataConnection, ownsPeer: boolean) {
     this.peer = peer;
     this.conn = conn;
+    this.ownsPeer = ownsPeer;
     conn.on('data', (data) => {
       if (this.closed) return;
       if (typeof data !== 'object' || data === null) return;
@@ -83,14 +89,22 @@ class PeerTransport implements Transport {
     try {
       this.conn.close();
     } finally {
-      this.peer.destroy();
+      if (this.ownsPeer) this.peer.destroy();
     }
   }
 
   protected remoteClosed(): void {
     if (this.closed) return;
     this.closed = true;
-    this.peer.destroy();
+    if (this.ownsPeer) {
+      this.peer.destroy();
+    } else {
+      try {
+        this.conn.close();
+      } catch (e) {
+        console.warn('[net] closing a dead connection', e);
+      }
+    }
     this.onClose?.();
   }
 }
@@ -105,13 +119,15 @@ function errorKind(type: string): NetError {
   return 'failed';
 }
 
-/* Open a room and wait for one guest. onCode is called once the broker has
-   registered the room. */
+/* Open a room. onCode is called once the broker has registered it, onGuest
+   for every guest that connects, until cancel(). Who gets a place is the
+   caller's business. */
 export function hostRoom(handlers: {
   onCode(code: string): void;
   onGuest(transport: Transport): void;
   onError(error: NetError): void;
 }): PendingConnection {
+  let opened = false;
   let peer: Peer | null = null;
   let done = false;
   let attempts = 0;
@@ -130,12 +146,13 @@ export function hostRoom(handlers: {
     peer = p;
 
     p.on('open', () => {
-      if (!done) handlers.onCode(code);
+      if (done || opened) return;
+      opened = true;
+      handlers.onCode(code);
     });
 
     p.on('connection', (conn) => {
       if (done) {
-        /* The room holds two players. */
         conn.close();
         return;
       }
@@ -144,19 +161,27 @@ export function hostRoom(handlers: {
           conn.close();
           return;
         }
-        done = true;
-        handlers.onGuest(new PeerTransport(p, conn));
+        handlers.onGuest(new PeerTransport(p, conn, false));
       });
     });
 
     p.on('disconnected', () => {
-      /* The broker dropped the room before a guest came: register again. */
-      if (!done && !p.destroyed) p.reconnect();
+      /* The broker dropped the room: register again, so that guests can
+         still find it. The open channels do not need the broker. */
+      if (done || p.destroyed) return;
+      setTimeout(() => {
+        if (!done && !p.destroyed && p.disconnected) p.reconnect();
+      }, opened ? BROKER_RETRY_MS : 0);
     });
 
     p.on('error', (err) => {
       if (done) return;
       console.error('[net] host error', err.type, err);
+      if (opened) {
+        /* The room exists; a failed connection of one guest or a lost
+           broker does not end it. */
+        return;
+      }
       if (err.type === 'unavailable-id' && attempts < MAX_CODE_ATTEMPTS) {
         p.destroy();
         open();
@@ -205,7 +230,7 @@ export function joinRoom(code: string, handlers: {
       }
       done = true;
       clearTimeout(timeout);
-      handlers.onOpen(new PeerTransport(peer, conn));
+      handlers.onOpen(new PeerTransport(peer, conn, true));
     });
     conn.on('error', (err) => {
       console.error('[net] join connection error', err);

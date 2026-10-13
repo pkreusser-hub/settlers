@@ -17,6 +17,7 @@ import { canReplaceBuilding } from '../net/commands';
 import { ChainsView } from './chains';
 import { InterfaceCursorType } from './interface';
 import type { Interface } from './interface';
+import { onBoxOpening, registerOpener } from './menu/kit';
 import {
   blurActive,
   buildingCanvas,
@@ -54,6 +55,13 @@ export const buildKeys: { key: string; type: BuildingType }[] = [
 export const flagKey = 'f';
 export const roadKey = 'r';
 export const chainsKey = 'v';
+
+/* The boxes of popup.ts that this menu stands for. */
+const buildBoxes: PopupBoxType[] = [
+  PopupBoxType.TypeBasicBld,
+  PopupBoxType.TypeBasicBldFlip,
+  PopupBoxType.TypeMineBuilding,
+];
 
 function keyOf(type: BuildingType): string | null {
   return buildKeys.find((k) => k.type === type)?.key ?? null;
@@ -116,7 +124,13 @@ export class BuildMenu {
 
     this.root.addEventListener('keydown', (e) => this.handleMenuKey(e));
 
-    this.iface.popupHook = (box) => this.handlePopup(box);
+    /* The registry of ui/menu is the popup hook of the interface: the
+       build boxes are registered there as this menu. */
+    registerOpener(buildBoxes, (box, fromCanvas) => this.handlePopup(box, fromCanvas));
+    onBoxOpening((box) => {
+      /* Another box of the game opens: the menu makes room. */
+      if (!buildBoxes.includes(box)) this.close();
+    });
     this.iface.keyHooks.push((key, modifier) => this.handleKey(key, modifier));
   }
 
@@ -145,20 +159,13 @@ export class BuildMenu {
     if (hadFocus) blurActive();
   }
 
-  /* Interface.openPopup asks before it opens a box: the first build boxes
-     become the menu. The second click on the build button closes it, as it
+  /* Interface.openPopup asks the registry before it opens a box: the first
+     build boxes become the menu. The second click on the build button closes it, as it
      closes the box. */
-  protected handlePopup(box: number): boolean {
-    if (this.bypass) return false;
-    if (
-      box !== PopupBoxType.TypeBasicBld &&
-      box !== PopupBoxType.TypeBasicBldFlip &&
-      box !== PopupBoxType.TypeMineBuilding
-    ) {
-      /* Another box of the game opens: the menu makes room. */
-      this.close();
-      return false;
-    }
+  protected handlePopup(box: number, fromCanvas: boolean): boolean {
+    /* Not when the box of the original was asked for, and not when it
+       turns its own pages. */
+    if (this.bypass || fromCanvas) return false;
     this.lastBox = box;
     if (this.isOpen()) {
       this.close();

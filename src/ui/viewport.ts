@@ -2720,17 +2720,28 @@ export class Viewport extends GuiObject implements MapHandler {
     }
 
     if (map.getObj(clkPos) === MapObject.ObjectFlag) {
+      // PORT: the C++ sets temp_index after it opens the box. A menu of the
+      // page (ui/menu) reads it while it opens, so it is set first; the
+      // canvas popup reads it when it draws, later either way.
+      player.tempIndex = map.getObjIndex(clkPos);
+
       if (map.getOwner(clkPos) === player.getIndex()) {
         this.interface.openPopup(PopupBoxType.TypeTransportInfo);
       }
-
-      player.tempIndex = map.getObjIndex(clkPos);
     } else { /* Building */
       const building = this.interface.getGame().getBuildingAtPos(clkPos);
       if ((building === null) || building.isBurning()) {
         return false;
       }
       if (map.getOwner(clkPos) === player.getIndex()) {
+        // PORT: temp_index first, as for the flag above. The C++ leaves it
+        // alone for a finished stock that is not active (the return below).
+        if (
+          !(building.isDone() && building.getType() === BuildingType.TypeStock && !building.isActive())
+        ) {
+          player.tempIndex = map.getObjIndex(clkPos);
+        }
+
         if (!building.isDone()) {
           this.interface.openPopup(PopupBoxType.TypeOrderedBld);
         } else if (building.getType() === BuildingType.TypeCastle) {
@@ -2755,8 +2766,6 @@ export class Viewport extends GuiObject implements MapHandler {
         } else {
           this.interface.openPopup(PopupBoxType.TypeBldStock);
         }
-
-        player.tempIndex = map.getObjIndex(clkPos);
       } else { /* Foreign building */
         /* TODO handle coop mode*/
         // PORT: the values of the attack box are the interface's, not the

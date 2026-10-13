@@ -61,6 +61,7 @@ import { Color, Graphics } from './gfx';
 import type { Frame } from './gfx';
 import { GuiObject } from './gui';
 import { NotificationBox } from './notification';
+import type { MinimapGame } from './minimap';
 import { PanelBar } from './panel';
 import { PopupBox, PopupBoxType } from './popup';
 import { Translation } from './translation';
@@ -91,6 +92,25 @@ export enum InterfaceBuildPossibility {
   BuildPossibilitySmall,
   BuildPossibilityLarge,
   BuildPossibilityCastle,
+}
+
+// PORT: not in the C++. A box of the game that the page shows as a window
+// (ui/menu/kit.ts) in place of the canvas popup. The interface holds it like
+// the popup: closePopup() closes it, getPopupBox() answers for it.
+export interface HtmlBox {
+  getBox(): number;
+  /* Take the window away. Called by the interface only. */
+  close(): void;
+  /* A command was applied: show the new state. */
+  refresh?(): void;
+}
+
+// PORT: not in the C++. What the callers of getPopupBox() use of the box
+// that is open, canvas popup or window. A window has no minimap.
+export interface OpenBox {
+  isDisplayed(): boolean;
+  getBox(): PopupBoxType;
+  getMinimap(): MinimapGame | null;
 }
 
 export enum InterfaceStatAspect {
@@ -168,6 +188,10 @@ export class Interface extends GuiObject implements GameManagerHandler {
   protected viewport: Viewport | null;
   protected panel: PanelBar | null;
   protected popup: PopupBox | null;
+  // PORT: not in the C++. The box that is open as a window of the page, and
+  // its answer for getPopupBox(). Never set while `popup` is.
+  protected htmlBox: HtmlBox | null = null;
+  protected htmlBoxView: OpenBox | null = null;
   protected initBox: GameInitBox | null;
   // PORT: AdvancedBox is not ported, this is always null.
   protected advancedBox: GuiObject | null;
@@ -302,6 +326,7 @@ export class Interface extends GuiObject implements GameManagerHandler {
     if (this.viewport !== null) this.viewport.destroy();
     if (this.panel !== null) this.panel.destroy();
     if (this.popup !== null) this.popup.destroy();
+    this.dropHtmlBox();
     if (this.initBox !== null) this.initBox.destroy();
     if (this.advancedBox !== null) this.advancedBox.destroy();
     if (this.notificationBox !== null) this.notificationBox.destroy();
@@ -324,8 +349,10 @@ export class Interface extends GuiObject implements GameManagerHandler {
     return this.panel;
   }
 
-  getPopupBox(): PopupBox | null {
-    return this.popup;
+  // PORT: PopupBox* in the C++. A box that is open as a window of the page
+  // answers too: it is displayed, has the type of the box and no minimap.
+  getPopupBox(): OpenBox | null {
+    return this.popup ?? this.htmlBoxView;
   }
 
   getNotificationBox(): NotificationBox | null {
@@ -439,14 +466,16 @@ export class Interface extends GuiObject implements GameManagerHandler {
 
   /* Open popup box */
   openPopup(box: number): void {
-    // PORT: not in the C++. The build menu of the page (build-menu.ts)
-    // takes the place of the build boxes.
-    if (this.popupHook !== null && this.popupHook(box)) {
+    // PORT: not in the C++. The menus of the page (ui/menu, build-menu.ts)
+    // take the place of the boxes they have registered.
+    if (this.popupHook !== null && this.popupHook(box, false)) {
       if (this.panel !== null) {
         this.panel.update();
       }
       return;
     }
+    // PORT: not in the C++. The canvas popup replaces a window of the page.
+    this.dropHtmlBox();
     if (this.popup === null) {
       this.popup = new PopupBox(this);
       this.addFloat(this.popup, 0, 0);
@@ -460,6 +489,20 @@ export class Interface extends GuiObject implements GameManagerHandler {
 
   /* Close the current popup. */
   closePopup(): void {
+    // PORT: a window of the page is closed the same way.
+    if (this.popup === null && this.htmlBox === null) {
+      return;
+    }
+    this.dropCanvasPopup();
+    this.dropHtmlBox();
+    this.updateMapCursorPos(this.mapCursorPos);
+    if (this.panel !== null) {
+      this.panel.update();
+    }
+  }
+
+  // PORT: not in the C++. The body of close_popup() for the canvas popup.
+  protected dropCanvasPopup(): void {
     if (this.popup === null) {
       return;
     }
@@ -467,10 +510,38 @@ export class Interface extends GuiObject implements GameManagerHandler {
     this.delFloat(this.popup);
     this.popup.destroy();
     this.popup = null;
-    this.updateMapCursorPos(this.mapCursorPos);
+  }
+
+  // PORT: not in the C++.
+  protected dropHtmlBox(): void {
+    const box = this.htmlBox;
+    if (box === null) {
+      return;
+    }
+    this.htmlBox = null;
+    this.htmlBoxView = null;
+    box.close();
+  }
+
+  // PORT: not in the C++. A window of the page becomes the open box: it
+  // replaces the canvas popup or the window before it, as show() of the
+  // popup replaces its box (the panel sees no moment without a box).
+  openHtmlBox(box: HtmlBox): void {
+    this.dropCanvasPopup();
+    this.dropHtmlBox();
+    this.htmlBox = box;
+    this.htmlBoxView = {
+      isDisplayed: () => true,
+      getBox: () => box.getBox() as PopupBoxType,
+      getMinimap: () => null,
+    };
     if (this.panel !== null) {
       this.panel.update();
     }
+  }
+
+  getHtmlBox(): HtmlBox | null {
+    return this.htmlBox;
   }
 
   /* Open box for starting a new game */
@@ -669,7 +740,8 @@ export class Interface extends GuiObject implements GameManagerHandler {
       this.returnTimeout = 0;
       this.viewport!.moveToMapPos(this.returnPos);
 
-      if (this.popup !== null && this.popup.getBox() === PopupBoxType.TypeMessage) {
+      const box = this.getPopupBox();
+      if (box !== null && box.getBox() === PopupBoxType.TypeMessage) {
         this.closePopup();
       }
       this.playSound(AudioTypeSfx.TypeSfxClick);
@@ -916,6 +988,9 @@ export class Interface extends GuiObject implements GameManagerHandler {
       this.viewport.destroy();
       this.viewport = null;
     }
+
+    // PORT: not in the C++. A window of the page shows the old game.
+    this.dropHtmlBox();
 
     this.game = newGame;
     this.autosaveLastTicks = EventLoop.getInstance().getTicks();
@@ -1501,6 +1576,9 @@ export class Interface extends GuiObject implements GameManagerHandler {
       if (this.popup !== null) {
         this.popup.setRedraw();
       }
+      if (this.htmlBox !== null) {
+        this.htmlBox.refresh?.();
+      }
     }
 
     this.playAmbientSounds();
@@ -1510,8 +1588,9 @@ export class Interface extends GuiObject implements GameManagerHandler {
        (Amiga clear_serf_request_failure @0xa3aa). */
     if (game.isGameEndPending()) {
       let box = 0;
-      if (this.popup !== null && this.popup.isDisplayed()) {
-        box = this.popup.getBox();
+      const openBox = this.getPopupBox();
+      if (openBox !== null && openBox.isDisplayed()) {
+        box = openBox.getBox();
       }
       if (
         !(
@@ -1576,11 +1655,15 @@ export class Interface extends GuiObject implements GameManagerHandler {
   }
 
   // PORT: not in the C++. The page overlays (build-menu.ts, alerts.ts) add
-  // their keys here and take the place of the build boxes. A key hook that
-  // returns true has used the key. The hooks only read the game and call
-  // the methods of the interface, which issue commands.
+  // their keys here. A key hook that returns true has used the key. The
+  // hooks only read the game and call the methods of the interface, which
+  // issue commands.
   keyHooks: ((key: number, modifier: number) => boolean)[] = [];
-  popupHook: ((box: number) => boolean) | null = null;
+  // PORT: not in the C++. The registry of the menus of the page
+  // (ui/menu/kit.ts) is the one popup hook: asked by openPopup() and, with
+  // fromCanvas, by the canvas popup when it switches to another box. True:
+  // the box is shown by the page.
+  popupHook: ((box: number, fromCanvas?: boolean) => boolean) | null = null;
 
   /* The game init box is open: the keys of the overlays are off. */
   isGameInitOpen(): boolean {
@@ -1608,7 +1691,7 @@ export class Interface extends GuiObject implements GameManagerHandler {
       case 27: {
         if (this.notificationBox !== null && this.notificationBox.isDisplayed()) {
           this.closeMessage();
-        } else if (this.popup !== null && this.popup.isDisplayed()) {
+        } else if ((this.popup !== null && this.popup.isDisplayed()) || this.htmlBox !== null) {
           this.closePopup();
         } else if (this.buildingRoad.isValid()) {
           this.buildRoadEnd();

@@ -537,7 +537,11 @@ export class EventLoopDOM extends EventLoop {
     if (
       target instanceof HTMLElement &&
       (target.isContentEditable ||
-        target.tagName === 'INPUT' ||
+        // A slide bar or a check box of a menu of the page takes no text:
+        // the keys it does not use itself (ui/menu/kit.ts stops those) are
+        // the game's.
+        (target.tagName === 'INPUT' &&
+          !['range', 'checkbox', 'radio', 'button'].includes((target as HTMLInputElement).type)) ||
         target.tagName === 'TEXTAREA' ||
         target.tagName === 'SELECT')
     ) {

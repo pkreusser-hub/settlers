@@ -4722,6 +4722,18 @@ export class PopupBox extends GuiObject {
   }
 
   protected setBox(box_: PopupBoxType): void {
+    // PORT: not in the C++. A box that the page shows as a window (ui/menu)
+    // opens there, also when this popup switches to it by itself. The window
+    // replaces this popup: Interface.openHtmlBox() destroys it, so nothing
+    // of it is used after.
+    if (
+      box_ !== PopupBoxType.TypeNone &&
+      this.displayed &&
+      this.interface.popupHook !== null &&
+      this.interface.popupHook(box_, true)
+    ) {
+      return;
+    }
     this.box = box_;
     if (this.box === PopupBoxType.TypeMap) {
       this.minimap.setDisplayed(true);

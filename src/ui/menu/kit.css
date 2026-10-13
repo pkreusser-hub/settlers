@@ -1,0 +1,688 @@
+/* The window and the widgets of the menu kit (kit.ts, widgets.ts). The
+   colours are the variables of theme.css. Every size is in em of .gx (which
+   --overlay-scale scales) or in --gx-px, the size of one pixel of the game
+   art, which the same variable scales. Not part of Freeserf. */
+
+.gx {
+  /* One pixel of a sprite of the game: 2 page pixels at scale 1, so the
+     art stays sharp. */
+  --gx-px: calc(2px * var(--gx-scale, 1));
+}
+
+.mk-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.gx .mk-sprite {
+  image-rendering: pixelated;
+  flex: none;
+}
+
+/* ---- Window ---- */
+
+.mk-win {
+  position: fixed;
+  /* Where the boxes of the game open: the middle of the page. */
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 26em;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  max-height: calc(100dvh - 16px);
+  color: var(--gx-text);
+  background: var(--gx-bg-solid);
+  border: 1px solid var(--gx-line);
+  border-radius: var(--gx-radius);
+  box-shadow: var(--gx-shadow);
+}
+
+.mk-win.mk-moved {
+  transform: none;
+}
+
+.mk-win[data-size='narrow'] {
+  width: 20em;
+}
+
+.mk-win[data-size='wide'] {
+  width: 38em;
+}
+
+/* With the game art: the wooden frame of the popup boxes around the
+   window, its ornament in the middle of the top edge. */
+.gx-art .mk-win {
+  border-style: solid;
+  border-color: #6b4a2b;
+  border-width: calc(9 * var(--gx-px)) calc(8 * var(--gx-px)) calc(7 * var(--gx-px));
+  border-image: var(--gx-frame-image) 9 8 7 8 / calc(9 * var(--gx-px)) calc(8 * var(--gx-px))
+    calc(7 * var(--gx-px)) round;
+  border-radius: 0;
+  image-rendering: pixelated;
+}
+
+.gx-art .mk-win::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: calc(-9 * var(--gx-px));
+  width: calc(56 * var(--gx-px));
+  height: calc(9 * var(--gx-px));
+  transform: translateX(-50%);
+  background: var(--gx-frame-ornament) center / 100% 100% no-repeat;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
+/* The pattern of the original box behind the title bar, and faintly behind
+   the body so that the text stays easy to read. */
+.mk-win {
+  --mk-pattern: var(--gx-pattern-green);
+}
+
+.mk-win[data-pattern='brown'] {
+  --mk-pattern: var(--gx-pattern-brown);
+}
+
+.mk-win[data-pattern='build'] {
+  --mk-pattern: var(--gx-pattern-build);
+}
+
+.mk-win[data-pattern='plain'] {
+  --mk-pattern: var(--gx-pattern-plain);
+}
+
+.mk-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  flex: none;
+  padding: 0.3em 0.3em 0.3em 0.7em;
+  background:
+    linear-gradient(rgba(16, 20, 12, 0.55), rgba(16, 20, 12, 0.55)),
+    var(--mk-pattern) 0 0 / calc(16 * var(--gx-px)) calc(16 * var(--gx-px)),
+    var(--gx-btn);
+  border-bottom: 1px solid var(--gx-line);
+  image-rendering: pixelated;
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.mk-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.1em;
+  font-weight: 600;
+  color: var(--gx-title);
+  text-shadow: 0 1px 0 #000;
+  overflow-wrap: anywhere;
+}
+
+.gx .mk-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 2.2em;
+  min-height: 2.2em;
+  padding: 0;
+  font-size: 1em;
+  line-height: 1;
+  color: var(--gx-text-strong);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--gx-radius-s);
+}
+
+.gx .mk-close:hover {
+  background: var(--gx-btn-hover);
+  border-color: var(--gx-line);
+}
+
+.mk-tabs {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 0.2em;
+  padding: 0.3em 0.4em 0;
+  background: var(--gx-bg-deep);
+  border-bottom: 1px solid var(--gx-line);
+}
+
+.gx .mk-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+  min-height: 2.2em;
+  padding: 0 0.7em;
+  color: var(--gx-text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: var(--gx-radius-s) var(--gx-radius-s) 0 0;
+}
+
+.gx .mk-tab:hover {
+  color: var(--gx-text-strong);
+  background: var(--gx-btn);
+}
+
+.gx .mk-tab[aria-selected='true'] {
+  color: var(--gx-text-strong);
+  font-weight: 600;
+  background: var(--gx-bg-solid);
+  border-color: var(--gx-line);
+  /* Not by colour alone: the tab that is shown has a bar on top. */
+  box-shadow: inset 0 0.2em 0 var(--gx-accent);
+  margin-bottom: -1px;
+}
+
+.mk-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.6em 0.7em;
+  background:
+    linear-gradient(rgba(24, 28, 18, 0.9), rgba(24, 28, 18, 0.9)),
+    var(--mk-pattern) 0 0 / calc(16 * var(--gx-px)) calc(16 * var(--gx-px)),
+    var(--gx-bg-solid);
+  image-rendering: pixelated;
+}
+
+.mk-foot {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.4em;
+  background: var(--gx-bg-deep);
+  border-top: 1px solid var(--gx-line);
+}
+
+/* ---- Focus: one ring for every control of a window ---- */
+
+.gx .mk-win :focus-visible {
+  outline: 2px solid var(--gx-focus);
+  outline-offset: 2px;
+}
+
+/* ---- Text ---- */
+
+.mk-hint {
+  margin: 0.2em 0 0.6em;
+  font-size: 0.92em;
+  color: var(--gx-text-dim);
+}
+
+.mk-section + .mk-section,
+.mk-body > * + .mk-section {
+  margin-top: 0.8em;
+}
+
+.mk-section-title {
+  margin: 0 0 0.3em;
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--gx-text-faint);
+}
+
+/* ---- Buttons ---- */
+
+.gx .mk-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4em;
+  color: var(--gx-text);
+  background: var(--gx-btn);
+  border: 1px solid var(--gx-line);
+  border-radius: var(--gx-radius-s);
+}
+
+.gx .mk-btn:hover {
+  background: var(--gx-btn-hover);
+}
+
+.gx .mk-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.gx .mk-btn:disabled:hover {
+  background: var(--gx-btn);
+}
+
+.gx .mk-btn-primary {
+  font-weight: 600;
+  border-color: var(--gx-accent);
+}
+
+.gx .mk-btn-danger {
+  background: var(--gx-danger-bg);
+  border-color: var(--gx-danger-line);
+}
+
+.gx .mk-btn-danger:hover {
+  background: var(--gx-danger-hover);
+}
+
+.gx .mk-btn-quiet {
+  color: var(--gx-text-dim);
+  background: transparent;
+}
+
+.gx .mk-btn-icon {
+  min-width: 2.2em;
+  padding: 0 0.2em;
+}
+
+/* ---- Rows: a name on the left, a value or a control on the right ---- */
+
+.mk-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2em 0.8em;
+  min-height: 2.2em;
+  padding: 0.15em 0;
+}
+
+.mk-row + .mk-row {
+  border-top: 1px solid var(--gx-line-soft);
+}
+
+.mk-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  flex: 1 1 9em;
+  min-width: 0;
+  color: var(--gx-text-strong);
+}
+
+.mk-pic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.mk-side {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4em;
+  flex: 0 1 auto;
+}
+
+.mk-value {
+  min-width: 2.6em;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--gx-text);
+}
+
+/* ---- Number grid ---- */
+
+.mk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5em, 1fr));
+  gap: 0.2em 0.6em;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mk-tile {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  min-width: 0;
+}
+
+.mk-tile-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.9em;
+  color: var(--gx-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mk-tile .mk-value {
+  min-width: 2em;
+  color: var(--gx-text-strong);
+}
+
+.mk-tile.mk-zero > .mk-pic,
+.mk-tile.mk-zero > .mk-value {
+  opacity: 0.45;
+}
+
+/* ---- Meter ---- */
+
+.mk-meter-bar {
+  width: 6em;
+  height: 0.7em;
+  background: var(--gx-bg-deep);
+  border: 1px solid var(--gx-line);
+  border-radius: 0.2em;
+  overflow: hidden;
+}
+
+.mk-meter-fill {
+  display: block;
+  height: 100%;
+  background: var(--gx-bar);
+}
+
+.mk-meter .mk-value {
+  min-width: 5em;
+}
+
+/* ---- Slider ---- */
+
+/* The bar goes under its name: it is as long as the window allows, at
+   every width. */
+.mk-slider .mk-side {
+  flex: 1 1 100%;
+}
+
+.gx .mk-range {
+  --mk-fill: 0%;
+  flex: 1;
+  min-width: 6em;
+  height: 2em;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* The bar of the original: a dark groove with a green fill. */
+.gx .mk-range::-webkit-slider-runnable-track {
+  height: 0.6em;
+  background: linear-gradient(
+    to right,
+    var(--gx-bar) var(--mk-fill),
+    var(--gx-bg-deep) var(--mk-fill)
+  );
+  border: 1px solid var(--gx-line);
+  border-radius: 0.2em;
+}
+
+.gx .mk-range::-moz-range-track {
+  height: 0.6em;
+  background: var(--gx-bg-deep);
+  border: 1px solid var(--gx-line);
+  border-radius: 0.2em;
+}
+
+.gx .mk-range::-moz-range-progress {
+  height: 0.6em;
+  background: var(--gx-bar);
+  border-radius: 0.2em;
+}
+
+.gx .mk-range::-webkit-slider-thumb {
+  width: 0.9em;
+  height: 1.5em;
+  margin-top: -0.5em;
+  background: var(--gx-accent);
+  border: 1px solid var(--gx-on-accent);
+  border-radius: 0.2em;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.gx .mk-range::-moz-range-thumb {
+  width: 0.9em;
+  height: 1.5em;
+  background: var(--gx-accent);
+  border: 1px solid var(--gx-on-accent);
+  border-radius: 0.2em;
+}
+
+/* ---- Stepper ---- */
+
+.mk-stepper .mk-value {
+  min-width: 3em;
+  text-align: center;
+}
+
+/* ---- Toggle ---- */
+
+.gx .mk-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  min-height: 2.2em;
+  padding: 0 0.6em 0 0.3em;
+  color: var(--gx-text);
+  background: var(--gx-bg-deep);
+  border: 1px solid var(--gx-line);
+  border-radius: 1.1em;
+}
+
+.mk-switch-knob {
+  position: relative;
+  width: 2.4em;
+  height: 1.3em;
+  background: var(--gx-btn);
+  border: 1px solid var(--gx-line);
+  border-radius: 0.7em;
+}
+
+.mk-switch-knob::after {
+  content: '';
+  position: absolute;
+  top: 0.15em;
+  left: 0.15em;
+  width: 1em;
+  height: 1em;
+  background: var(--gx-text-dim);
+  border-radius: 50%;
+  transition: left 0.12s;
+}
+
+.mk-switch[aria-checked='true'] .mk-switch-knob {
+  background: var(--gx-bar);
+}
+
+.mk-switch[aria-checked='true'] .mk-switch-knob::after {
+  left: 1.25em;
+  background: var(--gx-text-strong);
+}
+
+.mk-switch-text {
+  min-width: 1.8em;
+  font-weight: 600;
+}
+
+/* ---- Segmented control ---- */
+
+.mk-segmented {
+  padding: 0.2em 0;
+}
+
+.mk-seg-label {
+  margin-bottom: 0.2em;
+  font-size: 0.92em;
+  color: var(--gx-text-dim);
+}
+
+.mk-seg-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2em;
+}
+
+.gx .mk-seg {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3em;
+  min-height: 2.2em;
+  padding: 0 0.6em;
+  color: var(--gx-text);
+  background: var(--gx-btn);
+  border: 1px solid var(--gx-line);
+  border-radius: var(--gx-radius-s);
+}
+
+.gx .mk-seg:hover {
+  background: var(--gx-btn-hover);
+}
+
+.gx .mk-seg-icon {
+  min-width: 2.2em;
+  padding: 0.1em;
+}
+
+/* The choice: accent colour, and a frame that does not need the colour. */
+.gx .mk-seg[aria-checked='true'] {
+  color: var(--gx-on-accent);
+  font-weight: 600;
+  background: var(--gx-accent);
+  border-color: var(--gx-text-strong);
+  box-shadow: inset 0 0 0 2px var(--gx-on-accent);
+}
+
+/* ---- Priority list ---- */
+
+.mk-prio {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mk-prio-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  min-height: 2.2em;
+  padding: 0.1em 0;
+  border-top: 1px solid var(--gx-line-soft);
+}
+
+.mk-prio-row:first-child {
+  border-top: 0;
+}
+
+.mk-prio-place {
+  flex: none;
+  width: 2em;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--gx-text-faint);
+}
+
+.mk-prio-drag {
+  cursor: grab;
+}
+
+.mk-prio-row.mk-dragging {
+  opacity: 0.5;
+}
+
+.mk-prio-row.mk-drop {
+  box-shadow: inset 0 0.2em 0 var(--gx-accent);
+}
+
+/* ---- Confirm row ---- */
+
+.mk-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+  padding: 0.4em 0;
+}
+
+.mk-confirm-text {
+  margin: 0;
+  color: var(--gx-text-strong);
+}
+
+.mk-confirm-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+}
+
+.mk-confirm-buttons .mk-btn {
+  flex: 1 1 6em;
+}
+
+/* ---- Chart ---- */
+
+.mk-chart {
+  margin: 0 0 0.5em;
+}
+
+.mk-chart-canvas {
+  display: block;
+  width: 100%;
+  background: var(--gx-bg-deep);
+  border-radius: var(--gx-radius-s);
+  image-rendering: auto;
+}
+
+.mk-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2em 1em;
+  margin-top: 0.3em;
+  font-size: 0.92em;
+  color: var(--gx-text-dim);
+}
+
+.mk-legend:empty {
+  display: none;
+}
+
+.mk-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+}
+
+.mk-legend-mark {
+  width: 2em;
+  height: 0.5em;
+}
+
+/* ---- Small pages: the window takes the width, the controls go under
+   their names ---- */
+
+@media (max-width: 420px) {
+  .mk-body {
+    padding: 0.5em;
+  }
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gx *,
+  .gx *::before,
+  .gx *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

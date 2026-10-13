@@ -11,9 +11,9 @@
   padding: 16px;
   box-sizing: border-box;
   overflow: auto;
-  background: rgba(8, 10, 6, 0.82);
-  font: 16px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  color: #e6e0cf;
+  background: var(--gx-backdrop);
+  font: 16px/1.45 var(--gx-font);
+  color: var(--gx-text);
 }
 
 .ov-backdrop[hidden],
@@ -26,33 +26,33 @@
   max-width: 380px;
   box-sizing: border-box;
   padding: 24px 22px 22px;
-  background: #23261c;
-  border: 1px solid #5d5a3c;
+  background: var(--gx-bg-solid);
+  border: 1px solid var(--gx-line);
   border-radius: 6px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
 }
 
 .ov-panel.ov-drop {
-  border-color: #d9b64a;
-  background: #2b2e21;
+  border-color: var(--gx-accent);
+  background: var(--gx-bg-raised);
 }
 
 .ov-title {
   margin: 0 0 6px;
   font-size: 22px;
   font-weight: 600;
-  color: #f1dc9a;
+  color: var(--gx-title);
 }
 
 .ov-text {
   margin: 0 0 16px;
-  color: #c9c3b0;
+  color: var(--gx-text-dim);
 }
 
 .ov-small {
   margin: 14px 0 0;
   font-size: 13px;
-  color: #9d9886;
+  color: var(--gx-text-faint);
 }
 
 .ov-buttons {
@@ -79,20 +79,20 @@
   padding: 10px 14px;
   font: inherit;
   text-align: center;
-  color: #f3eedd;
-  background: #3d4a2c;
-  border: 1px solid #6e7d4f;
+  color: var(--gx-text-strong);
+  background: var(--gx-btn);
+  border: 1px solid var(--gx-btn-line);
   border-radius: 4px;
   cursor: pointer;
 }
 
 .ov-button:hover {
-  background: #4a5a35;
+  background: var(--gx-btn-hover);
 }
 
 .ov-button:focus-visible,
 .ov-input:focus-visible {
-  outline: 2px solid #d9b64a;
+  outline: 2px solid var(--gx-accent);
   outline-offset: 2px;
 }
 
@@ -102,20 +102,20 @@
 }
 
 .ov-button.ov-quiet {
-  color: #c9c3b0;
+  color: var(--gx-text-dim);
   background: transparent;
-  border-color: #55533f;
+  border-color: var(--gx-line);
 }
 
 .ov-button.ov-quiet:hover {
-  background: #2d3024;
+  background: var(--gx-bg-raised);
 }
 
 .ov-label {
   display: block;
   margin: 0 0 6px;
   font-size: 14px;
-  color: #c9c3b0;
+  color: var(--gx-text-dim);
 }
 
 .ov-input {
@@ -128,9 +128,9 @@
   letter-spacing: 0.2em;
   text-align: center;
   text-transform: uppercase;
-  color: #f3eedd;
-  background: #15170f;
-  border: 1px solid #5d5a3c;
+  color: var(--gx-text-strong);
+  background: var(--gx-bg-deep);
+  border: 1px solid var(--gx-line);
   border-radius: 4px;
 }
 
@@ -140,9 +140,9 @@
   font: 600 38px/1.1 ui-monospace, Consolas, 'Courier New', monospace;
   letter-spacing: 0.18em;
   text-align: center;
-  color: #f1dc9a;
-  background: #15170f;
-  border: 1px solid #5d5a3c;
+  color: var(--gx-title);
+  background: var(--gx-bg-deep);
+  border: 1px solid var(--gx-line);
   border-radius: 4px;
   user-select: all;
   -webkit-user-select: all;
@@ -151,13 +151,13 @@
 .ov-status {
   min-height: 1.45em;
   margin: 14px 0 0;
-  color: #c9c3b0;
+  color: var(--gx-text-dim);
 }
 
 .ov-error {
   min-height: 1.45em;
   margin: 14px 0 0;
-  color: #f0a08c;
+  color: var(--gx-bad);
 }
 
 .ov-error:empty,
@@ -180,15 +180,15 @@
   max-width: calc(100vw - 24px);
   box-sizing: border-box;
   padding: 8px 14px;
-  font: 14px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  color: #e6e0cf;
-  background: rgba(28, 30, 22, 0.94);
-  border: 1px solid #5d5a3c;
+  font: 14px/1.4 var(--gx-font);
+  color: var(--gx-text);
+  background: var(--gx-bg);
+  border: 1px solid var(--gx-line);
   border-radius: 4px;
 }
 
 .ov-hud.ov-alert {
-  border-color: #b5654f;
+  border-color: var(--gx-danger-line);
 }
 
 .ov-hud .ov-button {

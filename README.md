@@ -58,7 +58,7 @@ carriers and office networks) the connection fails; there is no relay server.
 
 - `src/data/` reads SPAE.PA.
 - `src/game/` is the simulation, ported file by file from Freeserf's C++.
-- `src/ui/` is the canvas interface, sound and the page controls.
+- `src/ui/` is the canvas interface, sound and the page controls; `src/ui/menu/` has the HTML menus.
 - `src/net/` is the command layer, lockstep session, lobby and PeerJS transport.
 - `tools/` has headless checks: `sim.ts` (determinism), `commands-test.ts` and
   `lockstep-test.ts` (two to four simulated players under latency, with drops and
@@ -74,6 +74,14 @@ says what it needs and makes. V shows the production chains. Keys build the
 common buildings at the map cursor (W woodcutter, E forester, Q stonecutter,
 A sawmill, I fisher, D farm, H guard hut, F flag, R road). L opens a list of
 problems such as buildings without a worker or mines without food.
+
+## Menus
+
+The boxes of the original game are being rebuilt as windows of the page, with
+text labels, in the game's own frame and icons (drawn from your SPAE.PA). So far:
+food for the mines (settings) and production over time (statistics). Drag a
+window by its title bar; Esc closes it. Boxes that are not rebuilt yet open as
+before.
 
 ## Save and load
 

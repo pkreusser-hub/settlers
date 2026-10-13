@@ -7,7 +7,7 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
-  font: 13px/1 system-ui, sans-serif;
+  font: 13px/1 var(--gx-font);
   user-select: none;
 }
 
@@ -16,41 +16,41 @@
   align-items: center;
   gap: 2px;
   padding: 3px;
-  background: rgba(24, 28, 18, 0.82);
-  border: 1px solid #55603c;
+  background: var(--gx-bg);
+  border: 1px solid var(--gx-line);
   border-radius: 6px;
 }
 
 #hud .hud-label {
   padding: 0 6px 0 5px;
-  color: #c9c3a4;
+  color: var(--gx-text-dim);
 }
 
 #hud button {
   min-width: 34px;
   height: 30px;
   padding: 0 8px;
-  color: #ece6c8;
-  background: #3b4628;
-  border: 1px solid #55603c;
+  color: var(--gx-text);
+  background: var(--gx-btn);
+  border: 1px solid var(--gx-line);
   border-radius: 4px;
   font: inherit;
   cursor: pointer;
 }
 
 #hud button:hover {
-  background: #4a5733;
+  background: var(--gx-btn-hover);
 }
 
 #hud button:focus-visible {
-  outline: 2px solid #e2c770;
+  outline: 2px solid var(--gx-accent);
   outline-offset: 1px;
 }
 
 #hud button[aria-pressed='true'] {
-  color: #1b1d12;
-  background: #e2c770;
-  border-color: #e2c770;
+  color: var(--gx-on-accent);
+  background: var(--gx-accent);
+  border-color: var(--gx-accent);
 }
 
 #hud button:disabled {

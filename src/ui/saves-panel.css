@@ -17,16 +17,16 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #9d9886;
+  color: var(--gx-text-faint);
 }
 
 .sv-list {
   margin: 0;
   padding: 0;
   list-style: none;
-  border: 1px solid #55533f;
+  border: 1px solid var(--gx-line);
   border-radius: 4px;
-  background: #1b1d15;
+  background: var(--gx-bg-deep);
 }
 
 .sv-row {
@@ -38,7 +38,7 @@
 }
 
 .sv-row + .sv-row {
-  border-top: 1px solid #3a3a2b;
+  border-top: 1px solid var(--gx-line-soft);
 }
 
 .sv-info {
@@ -49,18 +49,18 @@
 .sv-name {
   display: block;
   overflow-wrap: anywhere;
-  color: #f3eedd;
+  color: var(--gx-text-strong);
 }
 
 .sv-time,
 .sv-ask {
   display: block;
   font-size: 13px;
-  color: #9d9886;
+  color: var(--gx-text-faint);
 }
 
 .sv-ask {
-  color: #f0a08c;
+  color: var(--gx-bad);
 }
 
 .sv-actions {
@@ -78,12 +78,12 @@
 }
 
 .sv-button-danger {
-  background: #6b3326;
-  border-color: #a25a47;
+  background: var(--gx-danger-bg);
+  border-color: var(--gx-danger-line);
 }
 
 .sv-button-danger:hover {
-  background: #7d3c2d;
+  background: var(--gx-danger-hover);
 }
 
 .sv-foot {

@@ -54,3 +54,55 @@ UI files go to `src/ui/`. The foundation (`gfx.ts`, `gui.ts`, `event-loop.ts`, `
 - Assets are `Data.Resource.AssetIcon` (or `DataResource.AssetIcon`) from `data-instance.ts`. `Data.getInstance().getMixedSource()` is always null.
 - Sound: call `this.playSound(n)` as the C++ does; audio is not ported yet. Calls to `Audio`/`Audio::Player`/`Audio::VolumeController` go through `src/ui/audio.ts` (a no-op stand-in with the same method names until the audio port lands).
 - The config file and command line features are not ported: keep the menu entries and call sites, route them to a `// TODO(savegame)` no-op.
+
+## HTML menus
+
+The boxes of the game (`src/ui/popup.ts` and the other canvas boxes) are being replaced by HTML windows in `src/ui/menu/`. `kit.ts` is the window and the registry, `widgets.ts` the controls, `theme.css` the colours, `theme.ts` the frame and patterns drawn from SPAE.PA at run time, `names.ts` shared names. Each family of boxes has one file (`stats.ts`, `settings.ts`, `buildings.ts`, `start.ts`) with a `register*Boxes()` that `index.ts` calls. `initMenus(iface, gameManager)` installs the registry as `Interface.popupHook`: a registered `PopupBoxType` opens as a window, every other type opens as the canvas popup.
+
+Rules for every box port:
+
+- A menu only reads the game. It changes the game only through the `cmd*` functions of `src/net/commands.ts`, with the same calls and arguments that `PopupBox.handleAction()` makes for that box today. Never call a setter of `Player`, `Game`, `Building`, `Flag` or `Inventory`. If an action has no command, stop and report it; do not write to the game. Choices that belong to the interface (`Interface.setSelectedStat*`, `iface.attack.knightsAttacking`, minimap options, sound and message options) are set on the interface as the canvas box does.
+- Remove nothing from `popup.ts`, `game-init.ts`, `notification.ts` or `advanced-box.ts`. The canvas box stays as the fallback until every box is ported.
+- Read values in `get()` callbacks and in `update()`, not once in the factory: the window stays open while the game runs. Read `player.tempIndex` (the building or flag of the box) the same way, and close the box when the canvas version would (`tempIndex === 0`, building burning, wrong type).
+- Every number the original box shows is still shown, with a text label. An icon alone is not a label.
+- Text is plain English, short, active voice, no exclamation marks. Use the names of `production.ts` and `names.ts`.
+- Pictures come from the game data through `iconCanvas`, `resourceIcon`, `buildingIcon`, `serfIcon`, `faceCanvas`, `assetCanvas`. No emoji, no new art, no file of the original in the repository.
+- Colours come from the `--gx-*` variables of `theme.css`, sizes are in `em` or `--gx-px`. Add shared styles to `kit.css` only when two families need them; a family's own classes go in its own CSS file with its own prefix.
+- A state is never shown by colour alone, every control works with the keyboard, and `update()` must be cheap (it runs four times a second): compare with what is shown and touch the DOM only on a change. The widgets do this already.
+- To go to another box call `ctx.open(type)`; it opens the window or the canvas popup, whichever exists. To close call `ctx.close()`.
+
+Kit API (`import { ... } from './kit'` and `'./widgets'`):
+
+- `registerBox(type | type[], (ctx) => ({ update?, dispose? }) | void)`. `ctx` has `iface`, `gameManager`, `box`, `game`, `player`, `win`, `open(box)`, `close()`, `sound(sfx)`.
+- `ctx.win`: `setTitle(text)`, `setPattern('green' | 'brown' | 'build' | 'plain')` (the background of the original box), `setSize('narrow' | 'normal' | 'wide')`, `setTabs(tabs, current, ctx.open)`, `add(...widgets)` (appends to the body and runs their `update()` on the timer), `addTo(parent, ...)`, `track(widget)`, `foot()` (footer element), `body`, `initialFocus`.
+- Widgets, each `{ el, update? }`: `numberRow`, `numberGrid`, `meter`, `slider`, `shareSlider` (0..65500 in steps of 1310, the slide bars of the original), `stepper`, `toggle`, `segmented`, `priorityList`, `chart({ kind: 'bars' | 'lines', ... })`, `confirmRow`, `section`, `hint`, `button`.
+- `registerOpener` and `onBoxOpening` are for a box that is not a kit window (the build menu uses them).
+
+Example, the food box (`settings.ts`):
+
+```ts
+function sett1Box(ctx: BoxContext): BoxView {
+  const { win, game, player } = ctx;
+  win.setTitle('Food for the mines');
+  win.setPattern('brown');
+  win.add(
+    hint('A mine with a longer bar gets fish, meat and bread before the others.'),
+    shareSlider({
+      label: 'Stone mines',
+      icon: fitHeight(buildingIcon(BuildingType.TypeStoneMine, player.getColor()), 2.4),
+      get: () => player.getFoodStonemine(),
+      // ACTION_SETT_1_ADJUST_STONEMINE of popup.ts
+      set: (value) => cmdSetDistribution(game, 'setFoodStonemine', value),
+    }),
+  );
+  win.foot().append(
+    button('Default values', () => cmdResetPriority(game, 'resetFoodPriority')),
+    button('Back to settings', () => ctx.open(PopupBoxType.TypeSettSelect)),
+  );
+  return {};
+}
+
+registerBox(PopupBoxType.TypeSett1, sett1Box);
+```
+
+Check a port in the browser: the box opens from the same panel button, key or map click as before, shows the values of the game fields, each control issues the expected command (`addCommandListener` in the dev console) and Escape and the panel button close it.

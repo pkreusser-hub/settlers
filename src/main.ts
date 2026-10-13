@@ -22,6 +22,8 @@
  */
 
 import { GameManager } from './game/game-manager';
+// The colours of every overlay of the page.
+import './ui/menu/theme.css';
 // Registers the handlers of the player commands.
 import './net/commands';
 import { Log } from './game/misc';
@@ -29,6 +31,7 @@ import { GameStore } from './game/savegame';
 import { initAlerts } from './ui/alerts';
 import { Audio, AudioTypeMidi } from './ui/audio';
 import { initBuildMenu } from './ui/build-menu';
+import { initMenus } from './ui/menu';
 import { openLobby } from './net/lobby';
 import { loadGameData } from './ui/data-picker';
 import { EventLoop } from './ui/event-loop';
@@ -127,6 +130,12 @@ async function main(): Promise<boolean> {
 
   // PORT: page controls for speed and zoom, not in the C++.
   new Hud(gameManager, iface);
+  // PORT: not in the C++. The boxes of the game as windows of the page;
+  // its registry is the popup hook of the interface.
+  const menus = initMenus(iface, gameManager);
+  if (import.meta.env.DEV) {
+    (window as unknown as Record<string, unknown>).menus = menus;
+  }
   initBuildMenu(iface, gameManager);
   initAlerts(iface, gameManager);
   initStockPanel(iface, gameManager);

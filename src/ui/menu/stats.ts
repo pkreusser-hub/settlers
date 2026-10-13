@@ -23,7 +23,16 @@ import { buildingName } from '../production';
 import { registerBox } from './kit';
 import type { BoxContext, BoxView, Widget } from './kit';
 import { registerMapBoxes } from './map';
-import { resourceBoxOrder, resourceLabel, serfBoxOrder, serfName } from './names';
+import {
+  relationName,
+  resourceBoxOrder,
+  resourceLabel,
+  serfBoxOrder,
+  serfName,
+  stockPresetName,
+  teamName,
+  ticksAsClock,
+} from './names';
 import {
   button,
   buildingIcon,
@@ -285,6 +294,15 @@ function stat8Page(ctx: BoxContext): BoxView {
     const text = el('span', 'stat-text');
     const value = el('span', 'stat-detail');
     text.append(el('span', 'stat-name', playerLabel(p, ctx.player)), value);
+    /* GAME OPTIONS: the team of the player and how it stands to the local
+       player. The teams are fixed for the game. */
+    if (game.hasTeams()) {
+      const relation = relationName(game, ctx.player.getIndex(), p.getIndex());
+      const team = teamName(p.getTeam());
+      const line = [team !== '' ? team : 'No team', relation === 'you' ? '' : relation]
+        .filter((t) => t !== '').join(', ');
+      text.append(el('span', 'stat-detail stat-team', line));
+    }
     item.append(fitHeight(faceCanvas(p.getFace(), p.getColor()), 4.4), text);
     faces.append(item);
     return { value, shown: '' };
@@ -302,10 +320,31 @@ function stat8Page(ctx: BoxContext): BoxView {
   };
   facesWidget.update?.();
 
+  /* GAME OPTIONS, read only: what the setup chose for this game. */
+  const rules = game.getRules();
+  const optionRows: Widget[] = [
+    numberRow({ label: 'Starting stock', get: () => stockPresetName(rules.stockPreset) }),
+    numberRow({
+      label: 'Peace at the start',
+      get: () => {
+        if (rules.peaceMinutes === 0) return 'Off';
+        const left = game.getPeaceTicksLeft();
+        return left > 0
+          ? `${rules.peaceMinutes} minutes, ${ticksAsClock(left)} left`
+          : `${rules.peaceMinutes} minutes, over`;
+      },
+    }),
+    numberRow({
+      label: 'Teams',
+      get: () => (game.hasTeams() ? 'Fixed. Allies cannot attack each other.' : 'None'),
+    }),
+  ];
+
   win.add(
     hint('The share of each player in percent, over time.'),
     chart({ kind: 'lines', label: 'Players compared', height: 11, get: data }),
     facesWidget,
+    section('Game options', ...optionRows),
     segmented<InterfaceStatAspect>({
       label: 'Compare',
       options: statAspects,

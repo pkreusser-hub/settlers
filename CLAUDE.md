@@ -55,6 +55,18 @@ UI files go to `src/ui/`. The foundation (`gfx.ts`, `gui.ts`, `event-loop.ts`, `
 - Sound: call `this.playSound(n)` as the C++ does; audio is not ported yet. Calls to `Audio`/`Audio::Player`/`Audio::VolumeController` go through `src/ui/audio.ts` (a no-op stand-in with the same method names until the audio port lands).
 - The config file and command line features are not ported: keep the menu entries and call sites, route them to a `// TODO(savegame)` no-op.
 
+## Extensions
+
+Rules that the original does not have are marked `// EXT:` in the code. For each one:
+
+- Integers only, no `Math.random`, no clock. With the rule not in use the game runs exactly as before (the digests of `tools/sim.ts` do not change).
+- Every action of a player is a command in `src/net/commands.ts` that checks its arguments, with a case in `tools/commands-test.ts`.
+- New state is written to the save only when set, read with `hasValue`, and mixed into `src/net/hash.ts`.
+- The computer players must keep working with it.
+- A change that online players must share bumps `PROTOCOL_VERSION`.
+
+In the game so far: game options (`GameRules`: starting stock, peace) and teams (`Player.getTeam`, `Game.isAllied`, `Game.mayAttack`), tested by `tools/teams-test.ts`; building pause, output cap and upgrade in place (`Building.extPaused`, `extCap`, `upgradeTo`), tested by `tools/buildings-test.ts`.
+
 ## HTML menus
 
 The boxes of the game (`src/ui/popup.ts` and the other canvas boxes) are being replaced by HTML windows in `src/ui/menu/`. `kit.ts` is the window and the registry, `widgets.ts` the controls, `theme.css` the colours, `theme.ts` the frame and patterns drawn from SPAE.PA at run time, `names.ts` shared names. Each family of boxes has one file (`stats.ts`, `settings.ts`, `buildings.ts`, `start.ts`) with a `register*Boxes()` that `index.ts` calls. `initMenus(iface, gameManager)` installs the registry as `Interface.popupHook`: a registered `PopupBoxType` opens as a window, every other type opens as the canvas popup.

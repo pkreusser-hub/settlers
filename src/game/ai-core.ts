@@ -484,6 +484,8 @@ export function scanSites(player: Player): void {
     }
 
     if (!(owner & 0x80)) continue;
+    // EXT: a building of an ally is no attack target.
+    if (AI_GAME().isAllied(PLAYER_NUM(player), MAP_OWNER(pos))) continue;
     if (!isBuildingObj(MAP_OBJ(pos))) continue;
 
     const b = AI_BUILDING(MAP_OBJ_INDEX(pos));

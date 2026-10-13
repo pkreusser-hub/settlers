@@ -135,6 +135,20 @@
   flex: 1 1 100%;
 }
 
+/* A control that takes a line of its own (pause, output cap, upgrade). */
+.bw-action-wide {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.bw-action-wide .mk-seg-group {
+  flex-wrap: wrap;
+}
+
+.bw-action-reason {
+  color: var(--gx-text-strong);
+}
+
 .bw-action-note {
   flex: 1 1 100%;
   margin: 0;
@@ -155,4 +169,16 @@
 
 .bw-distance .mk-value {
   min-width: 2em;
+}
+
+/* ---- Attack window: why the rules allow no attack (teams, peace) ---- */
+
+.bw-refusal {
+  flex: 1 1 100%;
+  margin: 0 0 0.4em;
+  color: var(--gx-bad);
+}
+
+.bw-refusal[hidden] {
+  display: none;
 }

@@ -3,6 +3,10 @@
 // Usage: npx esbuild tools/commands-test.ts --bundle --platform=node --outfile=node_modules/.cache/commands-test.cjs --log-level=warning && node node_modules/.cache/commands-test.cjs
 
 import { BuildingType } from '../src/game/building';
+// EXT: for the building controls block of run().
+import { UpgradeRefusal } from '../src/game/building';
+import { MapObject } from '../src/game/map';
+import { canCapBuilding, canPauseBuilding, upgradeRefusal } from '../src/net/commands';
 import { InventoryMode } from '../src/game/inventory';
 import { Road } from '../src/game/map';
 import { GameInfo } from '../src/game/mission';
@@ -44,6 +48,151 @@ function hashGame(game: any): string {
   for (const f of game.flags) { mix(f.getPosition()); }
   return (h >>> 0).toString(16);
 }
+
+// ---------------------------------------------------------------------------
+// EXT (game options and teams): the startAttack command under the peace
+// timer and between allies. Its own block; the games here are apart from the
+// game of run().
+
+import { attackRefusal, canAttack } from '../src/net/commands';
+
+interface AttackScene {
+  game: any;
+  attacker: any;
+  /* The tower of player 1 and the tower of player 0 next to it. */
+  target: any;
+  source: any;
+}
+
+/* Two players, each with a manned tower, close enough for an attack of
+   player 0 on the tower of player 1. The towers come from the helper of
+   tutorial 6 (Game.buildOccupiedMilitary); nobody has a castle, so the game
+   stays quiet. */
+function attackScene(stockPreset: number, peaceMinutes: number, teams: number[]): AttackScene | null {
+  for (let attempt = 0; attempt < 400; attempt++) {
+    const info = new GameInfo(new Random('8667715887436237'));
+    info.removeAllPlayers();
+    info.addPlayer(12, { red: 0, green: 0, blue: 0 }, 40, 40, 40);
+    info.addPlayer(13, { red: 0, green: 0, blue: 0 }, 40, 40, 40);
+    info.setDefaultColors();
+    info.getPlayer(0).setTeam(teams[0]);
+    info.getPlayer(1).setTeam(teams[1]);
+    info.setRules({ stockPreset, peaceMinutes });
+    const game = info.instantiate()! as any;
+    game.rnd = new Random(0x1234, 0x5678, 0x9abc);
+    const map = game.getMap();
+    const size = map.getCols() * map.getRows();
+    const p0 = game.getPlayer(0);
+    const p1 = game.getPlayer(1);
+
+    /* The attempt picks the place of the first tower and where the second
+       stands from it. */
+    let seen = 0;
+    let pos1 = -1;
+    for (let pos = 0; pos < size; pos++) {
+      if (game.canBuildCastle(pos, p1) && game.canBuildMilitary(pos) && seen++ === (attempt >> 3) * 37) {
+        pos1 = pos;
+        break;
+      }
+    }
+    if (pos1 < 0) return null;
+    game.buildOccupiedMilitary(pos1, BuildingType.TypeTower, p1);
+    const pos0 = map.posAdd(pos1, 8 + (attempt & 7), 0);
+    if (!game.canBuildCastle(pos0, p0) || !game.canBuildMilitary(pos0)) continue;
+    game.buildOccupiedMilitary(pos0, BuildingType.TypeTower, p0);
+
+    const target = game.getBuildingAtPos(pos1);
+    const source = game.getBuildingAtPos(pos0);
+    if (target === null || source === null) continue;
+    /* Allies are no threat to each other: the tower of an ally is not at
+       the highest threat level by itself. The level is set here, so that
+       only the rule about allies stands in the way of the attack. */
+    if (game.isAllied(0, 1)) target.setThreatLevel(3);
+    if (target.getThreatLevel() !== 3) continue;
+    if (previewAttack(p0, pos1).totalAttackingKnights < 2) continue;
+    return { game, attacker: p0, target, source };
+  }
+  return null;
+}
+
+/* Knights of player 0 on their way to a fight. */
+function knightsOut(scene: AttackScene): number {
+  return 6 - scene.source.getKnightCount();
+}
+
+function runAttackRules(out: string[]): void {
+  const attack = (scene: AttackScene): void => {
+    executeCommand(scene.game, 0, { type: 'startAttack', pos: scene.target.getPosition(), knights: 2 });
+  };
+
+  // --- neither option: the attack starts, as before
+  const free = attackScene(0, 0, [0, 0]);
+  if (free === null) { check(out, 'EXT attack scene could be built', false); return; }
+  check(out, 'EXT without peace and teams: canAttack, no refusal',
+        canAttack(free.game, free.target.getPosition(), free.attacker) &&
+        attackRefusal(free.game, free.target.getPosition(), free.attacker) === '');
+  attack(free);
+  check(out, `EXT without peace and teams: startAttack sends ${knightsOut(free)} knights`,
+        knightsOut(free) === 2 && free.target.isUnderAttack());
+
+  // --- allies
+  const allied = attackScene(0, 0, [1, 1]);
+  if (allied === null) { check(out, 'EXT allied attack scene could be built', false); return; }
+  const alliedPos = allied.target.getPosition();
+  check(out, 'EXT allies: canAttack is false, the refusal is "ally"',
+        !canAttack(allied.game, alliedPos, allied.attacker) &&
+        attackRefusal(allied.game, alliedPos, allied.attacker) === 'ally');
+  attack(allied);
+  check(out, 'EXT allies: startAttack on the tower of an ally is refused',
+        knightsOut(allied) === 0 && !allied.target.isUnderAttack());
+  /* Past the command: the simulation itself refuses. */
+  allied.attacker.buildingAttacked = allied.target.getIndex();
+  allied.attacker.knightsAttacking = Math.min(2, allied.attacker.knightsAvailableForAttack(alliedPos));
+  allied.attacker.startAttack();
+  check(out, 'EXT allies: Player.startAttack() itself sends nobody against an ally',
+        allied.attacker.attackingBuildingCount > 0 && knightsOut(allied) === 0 &&
+        !allied.target.isUnderAttack());
+
+  // --- two teams against each other
+  const enemies = attackScene(0, 0, [1, 2]);
+  if (enemies === null) { check(out, 'EXT enemy teams attack scene could be built', false); return; }
+  attack(enemies);
+  check(out, 'EXT team A against team B: startAttack is allowed',
+        knightsOut(enemies) === 2 && enemies.target.isUnderAttack());
+
+  // --- the peace timer: 10 minutes are 60000 ticks
+  const peace = attackScene(0, 10, [0, 0]);
+  if (peace === null) { check(out, 'EXT peace attack scene could be built', false); return; }
+  const peacePos = peace.target.getPosition();
+  check(out, `EXT peace: ${peace.game.getPeaceTicksLeft()} ticks left at the start, the refusal is "peace"`,
+        peace.game.isPeace() && peace.game.getPeaceTicksLeft() === 60000 &&
+        !canAttack(peace.game, peacePos, peace.attacker) &&
+        attackRefusal(peace.game, peacePos, peace.attacker) === 'peace');
+  attack(peace);
+  check(out, 'EXT peace: startAttack at the start is refused',
+        knightsOut(peace) === 0 && !peace.target.isUnderAttack());
+  while (peace.game.getPeaceTicksLeft() > peace.game.gameSpeed) peace.game.update();
+  attack(peace);
+  check(out, `EXT peace: still refused at tick ${peace.game.getTick()}`,
+        peace.game.isPeace() && knightsOut(peace) === 0 && !peace.target.isUnderAttack());
+  peace.attacker.buildingAttacked = peace.target.getIndex();
+  peace.attacker.knightsAttacking = Math.min(2, peace.attacker.knightsAvailableForAttack(peacePos));
+  peace.attacker.startAttack();
+  check(out, 'EXT peace: Player.startAttack() itself sends nobody during the peace',
+        knightsOut(peace) === 0 && !peace.target.isUnderAttack());
+  peace.game.update();
+  attack(peace);
+  check(out, `EXT peace: allowed at tick ${peace.game.getTick()}, once the timer is over`,
+        !peace.game.isPeace() && peace.game.getTick() >= 60000 &&
+        knightsOut(peace) === 2 && peace.target.isUnderAttack());
+
+  // --- options that are not valid leave the defaults
+  const odd = attackScene(7, 15, [0, 0]);
+  check(out, 'EXT a stock preset and a peace time that do not exist are not taken',
+        odd !== null && odd.game.getRules().stockPreset === 0 && odd.game.getRules().peaceMinutes === 0);
+}
+
+// EXT: end of the block.
 
 function run(): string[] {
   const out: string[] = [];
@@ -309,6 +458,139 @@ function run(): string[] {
         ticks === 20000 && (lumberjack.isDone() || lumberjack.getProgress() > 0) &&
         game.getBuildingAtPos(stonecutterPos) === null && [...game.serfs].length > serfs &&
         player.timers.length === 0 && player.hasNotification());
+
+  // EXT (game options and teams): see runAttackRules().
+  runAttackRules(out);
+
+  // -------------------------------------------------------------------------
+  // EXT: building controls (setBuildingPaused, setBuildingCap,
+  // upgradeBuilding). tools/buildings-test.ts checks what they do to the
+  // economy; here: who may issue them and with which arguments.
+  {
+    const bld = (pos: number) => game.getBuildingAtPos(pos);
+
+    // --- setBuildingPaused
+    exec({ type: 'setBuildingPaused', pos: lumberjackPos, paused: true }, 1);
+    check(out, 'setBuildingPaused by the other player does nothing', !lumberjack.isProductionPaused());
+    exec({ type: 'setBuildingPaused', pos: castlePos, paused: true });
+    check(out, 'setBuildingPaused on the castle does nothing',
+          !bld(castlePos).isProductionPaused() && !canPauseBuilding(game, castlePos, player));
+    exec({ type: 'setBuildingPaused', pos: lumberjackPos, paused: 'yes' as unknown as boolean });
+    exec({ type: 'setBuildingPaused', pos: size, paused: true });
+    check(out, 'setBuildingPaused with invalid arguments does nothing', !lumberjack.isProductionPaused());
+    exec({ type: 'setBuildingPaused', pos: lumberjackPos, paused: true });
+    exec({ type: 'setBuildingPaused', pos: lumberjackPos, paused: true });
+    const wasPaused = lumberjack.isProductionPaused() && lumberjack.isProductionHeld();
+    exec({ type: 'setBuildingPaused', pos: lumberjackPos, paused: false });
+    check(out, 'setBuildingPaused (twice true is still paused, then false)',
+          wasPaused && !lumberjack.isProductionPaused() && canPauseBuilding(game, lumberjackPos, player));
+
+    // --- setBuildingCap
+    exec({ type: 'setBuildingCap', pos: lumberjackPos, cap: 20 }, 1);
+    check(out, 'setBuildingCap by the other player does nothing', lumberjack.getProductionCap() === 0);
+    for (const cap of [15, -10, 1000, 10.5, '10' as unknown as number]) {
+      exec({ type: 'setBuildingCap', pos: lumberjackPos, cap });
+    }
+    exec({ type: 'setBuildingCap', pos: castlePos, cap: 10 });
+    check(out, 'setBuildingCap with a value that is not a step, or on the castle, does nothing',
+          lumberjack.getProductionCap() === 0 && bld(castlePos).getProductionCap() === 0 &&
+          !canCapBuilding(game, castlePos, player));
+    exec({ type: 'setBuildingCap', pos: lumberjackPos, cap: 200 });
+    const capped = lumberjack.getProductionCap();
+    exec({ type: 'setBuildingCap', pos: lumberjackPos, cap: 0 });
+    check(out, 'setBuildingCap 200, then 0 (off)',
+          capped === 200 && lumberjack.getProductionCap() === 0 && canCapBuilding(game, lumberjackPos, player));
+
+    // --- upgradeBuilding: a hut where a tower fits and one where none does
+    const placeHut = (large: boolean): number => {
+      for (let i = 7; i < 295; i++) {
+        const pos = map.posAddSpirally(castlePos, i);
+        if (!game.canBuildBuilding(pos, BuildingType.TypeHut, player)) continue;
+        if (game.canBuildLarge(pos) !== large) continue;
+        const hutFlag = map.moveDownRight(pos);
+        if (!map.hasFlag(hutFlag)) {
+          exec({ type: 'buildFlag', pos: hutFlag });
+          if (!map.hasFlag(hutFlag)) continue;
+          /* The shorter road to the flag of the castle or of the woodcutter
+             (which has a road to the castle), not over the site. */
+          let best: number[] | null = null;
+          for (const target of [castleFlag, lumberjackFlag]) {
+            const dirs: number[] = pathfinderMap(map, hutFlag, target).getDirs().slice();
+            if (dirs.length === 0 || (best !== null && dirs.length >= best.length)) continue;
+            let p = hutFlag;
+            let free = true;
+            for (let k = 0; k < dirs.length; k++) {
+              p = map.move(p, dirs[k]);
+              if (p === pos || (map.hasFlag(p) && k < dirs.length - 1)) free = false;
+            }
+            if (free) best = dirs;
+          }
+          if (best !== null) exec({ type: 'buildRoad', start: hutFlag, dirs: best, flag: RoadFlag.None });
+          if (map.paths(hutFlag) === 0) {
+            exec({ type: 'demolishFlag', pos: hutFlag });
+            continue;
+          }
+        }
+        if (!game.canBuildBuilding(pos, BuildingType.TypeHut, player)) continue;
+        exec({ type: 'buildBuilding', pos, building: BuildingType.TypeHut });
+        if (bld(pos)?.getType() === BuildingType.TypeHut) return pos;
+      }
+      return -1;
+    };
+    const smallHutPos = placeHut(false);
+    const hutPos = placeHut(true);
+    check(out, 'built a hut on a large site and a hut on a small site', hutPos >= 0 && smallHutPos >= 0);
+    if (hutPos >= 0 && smallHutPos >= 0) {
+      const hut = bld(hutPos);
+      exec({ type: 'upgradeBuilding', pos: hutPos });
+      check(out, 'upgradeBuilding on a hut that is not finished does nothing',
+            !hut.isUpgrading() && upgradeRefusal(game, hutPos, player) === UpgradeRefusal.NotFinished);
+      let waited = 0;
+      while (waited < 60000 && !(hut.isActive() && bld(smallHutPos).isActive())) {
+        game.update();
+        waited++;
+      }
+      check(out, `both huts have knights after ${waited} updates`, hut.isActive() && bld(smallHutPos).isActive());
+
+      exec({ type: 'upgradeBuilding', pos: hutPos }, 1);
+      check(out, 'upgradeBuilding by the other player does nothing',
+            !hut.isUpgrading() && upgradeRefusal(game, hutPos, game.getPlayer(1)) === UpgradeRefusal.NotOwn);
+      exec({ type: 'upgradeBuilding', pos: lumberjackPos });
+      exec({ type: 'upgradeBuilding', pos: castlePos });
+      check(out, 'upgradeBuilding on a woodcutter or the castle does nothing',
+            !lumberjack.isUpgrading() && !bld(castlePos).isUpgrading() &&
+            upgradeRefusal(game, lumberjackPos, player) === UpgradeRefusal.WrongType);
+      exec({ type: 'upgradeBuilding', pos: smallHutPos });
+      check(out, 'upgradeBuilding on a hut where no large building fits does nothing',
+            !bld(smallHutPos).isUpgrading() && map.getObj(smallHutPos) === MapObject.ObjectSmallBuilding &&
+            upgradeRefusal(game, smallHutPos, player) === UpgradeRefusal.NoRoom);
+      for (const pos of [-1, size, 0.5, NaN, undefined as unknown as number]) {
+        exec({ type: 'upgradeBuilding', pos });
+        exec({ type: 'setBuildingPaused', pos, paused: true });
+        exec({ type: 'setBuildingCap', pos, cap: 10 });
+      }
+      check(out, 'the three commands with a position that is not valid do nothing', !hut.isUpgrading());
+
+      exec({ type: 'upgradeBuilding', pos: hutPos });
+      check(out, 'upgradeBuilding on the hut on the large site: an upgrade to a tower starts',
+            hut.isUpgrading() && hut.getUpgradeTo() === BuildingType.TypeTower &&
+            hut.getType() === BuildingType.TypeHut && map.getObj(hutPos) === MapObject.ObjectLargeBuilding &&
+            upgradeRefusal(game, hutPos, player) === UpgradeRefusal.InProgress);
+      const timer = hut.getUpgradeTimer();
+      exec({ type: 'upgradeBuilding', pos: hutPos });
+      check(out, 'a second upgradeBuilding does nothing', hut.getUpgradeTo() === BuildingType.TypeTower &&
+            hut.getUpgradeTimer() === timer);
+      let upgraded = 0;
+      while (upgraded < 60000 && hut.isUpgrading()) {
+        game.update();
+        upgraded++;
+      }
+      check(out, `the hut is a tower after ${upgraded} updates`,
+            !hut.isUpgrading() && hut.getType() === BuildingType.TypeTower);
+    }
+  }
+  // EXT: end of the building controls block.
+  // -------------------------------------------------------------------------
 
   out.push(`hash=${hashGame(game)}`);
   return out;

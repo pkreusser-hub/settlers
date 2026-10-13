@@ -1,5 +1,10 @@
 // Dev tool: save a running game, load it again and compare.
-// Usage: npx esbuild tools/save-test.ts --bundle --platform=node --outfile=node_modules/.cache/save-test.cjs && node node_modules/.cache/save-test.cjs [mission] [updates] [after]
+// Usage: npx esbuild tools/save-test.ts --bundle --platform=node --outfile=node_modules/.cache/save-test.cjs && node node_modules/.cache/save-test.cjs [mission] [updates] [after] [ext]
+//
+// With a fourth argument `ext` the game is not the mission but a custom game
+// of four computer players with the game options and teams in use (EXT:
+// rich stock, 20 minutes of peace, teams A A B and none); the options and
+// teams must come back from the file.
 //
 // Checks, at several points of a game with computer players:
 //  1. save -> load -> save gives the same text (nothing is lost or changed
@@ -18,6 +23,8 @@ import { stateHash } from '../src/net/hash';
 const mission = Number(process.argv[2] ?? 1);
 const updates = Number(process.argv[3] ?? 40000);
 const after = Number(process.argv[4] ?? 5000);
+// EXT (game options and teams): see the head of the file.
+const ext = process.argv[5] === 'ext';
 
 const store = GameStore.getInstance();
 let failed = false;
@@ -45,7 +52,28 @@ function load(text: string): Game {
   return game;
 }
 
-const info = GameInfo.getMission(mission)!;
+// EXT (game options and teams): the game of the `ext` run.
+const extTeams = [1, 1, 2, 0];
+const extRules = { stockPreset: 2, peaceMinutes: 20 };
+function extInfo(): GameInfo {
+  const custom = new GameInfo(new Random('8667715887436237'));
+  custom.removeAllPlayers();
+  const faces = [9, 7, 5, 2];
+  for (let i = 0; i < 4; i++) {
+    custom.addPlayer(faces[i], { red: 0, green: 0, blue: 0 }, 40, 30, 40);
+    custom.getPlayer(i).setTeam(extTeams[i]);
+  }
+  custom.setDefaultColors();
+  custom.setRules(extRules);
+  return custom;
+}
+function extState(g: Game): string {
+  const teams = [0, 1, 2, 3].map((i) => g.getPlayer(i)?.getTeam() ?? -1).join('');
+  return `stock ${g.getRules().stockPreset}, peace ${g.getRules().peaceMinutes}, teams ${teams}`;
+}
+// EXT: end of the block.
+
+const info = ext ? extInfo() : GameInfo.getMission(mission)!;
 const game = info.instantiate()!;
 (game as unknown as { rnd: Random }).rnd = new Random(0x1234, 0x5678, 0x9abc);
 
@@ -60,6 +88,15 @@ for (let p = 1; p <= points; p++) {
   if (!roundTrip) failed = true;
 
   const b = load(text);
+  // EXT (game options and teams): they come back from the file.
+  if (ext) {
+    const want = `stock ${extRules.stockPreset}, peace ${extRules.peaceMinutes}, teams ${extTeams.join('')}`;
+    const ok = extState(game) === want && extState(a) === want && a.isAllied(0, 1) && !a.isAllied(0, 2) &&
+      a.getPeaceTicksLeft() === game.getPeaceTicksLeft();
+    if (!ok) failed = true;
+    console.log(`  options and teams after loading: ${extState(a)}, peace ticks left ${a.getPeaceTicksLeft()} ` +
+                `${ok ? 'ok' : 'DIFFER from ' + want}`);
+  }
   let pair = true;
   let original = -1;
   let diff = '';

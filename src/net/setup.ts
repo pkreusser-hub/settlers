@@ -2,7 +2,7 @@
 // sent to the guests, and built the same way on all sides.
 
 import { AI } from '../game/ai';
-import { Game, GameGameType } from '../game/game';
+import { Game, GameGameType, isValidGameRules, isValidTeam } from '../game/game';
 import { defColor, GameInfo, PlayerInfo } from '../game/mission';
 import { Random } from '../game/random';
 import { MAX_HUMANS } from './protocol';
@@ -34,6 +34,8 @@ export function makeSetup(info: GameInfo, gameSeed: Random, humans = 2): GameSet
       supplies: p !== null ? p.getSupplies() : 40,
       reproduction: p !== null ? p.getReproduction() : 40,
       castle: p !== null ? p.getCastlePos() : { col: -1, row: -1 },
+      // EXT: teams, set by the host in the setup.
+      team: p !== null ? p.getTeam() : 0,
     });
   }
 
@@ -45,6 +47,8 @@ export function makeSetup(info: GameInfo, gameSeed: Random, humans = 2): GameSet
     level: 0,
     humans,
     players,
+    // EXT: game options.
+    rules: info.getRules(),
   };
 }
 
@@ -80,7 +84,11 @@ export function isValidSetup(setup: GameSetup): boolean {
     const castle = p.castle;
     if (typeof castle !== 'object' || castle === null) return false;
     if (!isInt(castle.col, -1, 1023) || !isInt(castle.row, -1, 1023)) return false;
+    // EXT: teams.
+    if (!isValidTeam(p.team)) return false;
   }
+  // EXT: game options.
+  if (!isValidGameRules(setup.rules)) return false;
   return true;
 }
 
@@ -99,8 +107,12 @@ export class NetGameInfo extends GameInfo {
     for (const p of setup.players) {
       const player = new PlayerInfo(p.face, p.color, p.intelligence, p.supplies, p.reproduction);
       player.setCastlePos(p.castle);
+      // EXT: teams.
+      player.setTeam(p.team);
       this.players.push(player);
     }
+    // EXT: game options.
+    this.rules = { stockPreset: setup.rules.stockPreset, peaceMinutes: setup.rules.peaceMinutes };
   }
 
   /* GameInfo.instantiate() with the one difference that the random numbers
@@ -113,6 +125,8 @@ export class NetGameInfo extends GameInfo {
       return null;
     }
     game.setGameType(this.gameType, this.level);
+    // EXT: the options before the first castle, as GameInfo.instantiate().
+    if (this.hasExtensions()) game.setRules(this.rules);
 
     for (const playerInfo of this.players) {
       const index = game.addPlayer(playerInfo.getIntelligence(),
@@ -120,6 +134,8 @@ export class NetGameInfo extends GameInfo {
                                    playerInfo.getReproduction());
       const player = game.getPlayer(index)!;
       player.initView(playerInfo.getColor(), playerInfo.getFace());
+      // EXT: teams.
+      if (this.hasExtensions()) player.setTeam(playerInfo.getTeam());
 
       const castlePos = playerInfo.getCastlePos();
       if (castlePos.col > -1 && castlePos.row > -1) {

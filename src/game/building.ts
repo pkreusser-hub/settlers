@@ -143,6 +143,139 @@ export function constInfo(): ConstructionInfo[] {
   return constInfoTable;
 }
 
+// ---------------------------------------------------------------------------
+// EXT: production controls and the upgrade of military buildings. Not part
+// of Freeserf. Everything below up to the Building class is new.
+
+// EXT: the steps of the output cap of a building: 0 is off.
+export const productionCapSteps: number[] = [0, 10, 20, 50, 100, 200];
+
+// EXT: the buildings whose worker makes or converts something: these can be
+// paused. Not the military buildings, the castle or the storehouse.
+export function isProductionBuilding(type: BuildingType): boolean {
+  switch (type) {
+    case BuildingType.TypeFisher:
+    case BuildingType.TypeLumberjack:
+    case BuildingType.TypeBoatbuilder:
+    case BuildingType.TypeStonecutter:
+    case BuildingType.TypeStoneMine:
+    case BuildingType.TypeCoalMine:
+    case BuildingType.TypeIronMine:
+    case BuildingType.TypeGoldMine:
+    case BuildingType.TypeForester:
+    case BuildingType.TypeFarm:
+    case BuildingType.TypeButcher:
+    case BuildingType.TypePigFarm:
+    case BuildingType.TypeMill:
+    case BuildingType.TypeBaker:
+    case BuildingType.TypeSawmill:
+    case BuildingType.TypeSteelSmelter:
+    case BuildingType.TypeToolMaker:
+    case BuildingType.TypeWeaponSmith:
+    case BuildingType.TypeGoldSmelter:
+      return true;
+    default:
+      return false;
+  }
+}
+
+// EXT: the one resource a production building hands out, which its output
+// cap counts; TypeNone for the forester (no resource) and for the toolmaker
+// and the weaponsmith (several outputs): these have no cap.
+export function productionOutput(type: BuildingType): ResourceType {
+  switch (type) {
+    case BuildingType.TypeFisher: return ResourceType.TypeFish;
+    case BuildingType.TypeLumberjack: return ResourceType.TypeLumber;
+    case BuildingType.TypeBoatbuilder: return ResourceType.TypeBoat;
+    case BuildingType.TypeStonecutter: return ResourceType.TypeStone;
+    case BuildingType.TypeStoneMine: return ResourceType.TypeStone;
+    case BuildingType.TypeCoalMine: return ResourceType.TypeCoal;
+    case BuildingType.TypeIronMine: return ResourceType.TypeIronOre;
+    case BuildingType.TypeGoldMine: return ResourceType.TypeGoldOre;
+    case BuildingType.TypeFarm: return ResourceType.TypeWheat;
+    case BuildingType.TypeButcher: return ResourceType.TypeMeat;
+    case BuildingType.TypePigFarm: return ResourceType.TypePig;
+    case BuildingType.TypeMill: return ResourceType.TypeFlour;
+    case BuildingType.TypeBaker: return ResourceType.TypeBread;
+    case BuildingType.TypeSawmill: return ResourceType.TypePlank;
+    case BuildingType.TypeSteelSmelter: return ResourceType.TypeSteel;
+    case BuildingType.TypeGoldSmelter: return ResourceType.TypeGoldBar;
+    default: return ResourceType.TypeNone;
+  }
+}
+
+// EXT: why production stands still (Building::getProductionHold).
+export enum ProductionHold {
+  None = 0,
+  Paused,
+  Capped,
+}
+
+// EXT: what a military building is upgraded to: guard hut to tower, tower
+// to fortress. TypeNone for every other type.
+export function upgradeTarget(type: BuildingType): BuildingType {
+  switch (type) {
+    case BuildingType.TypeHut: return BuildingType.TypeTower;
+    case BuildingType.TypeTower: return BuildingType.TypeFortress;
+    default: return BuildingType.TypeNone;
+  }
+}
+
+// EXT: planks and stones of the upgrade of a building of this type: the
+// difference of the construction costs of the two types, at least 1 each
+// (hut to tower 1 and 2, tower to fortress 3 and 2).
+export function upgradeCost(type: BuildingType): { planks: number; stones: number } {
+  const target = upgradeTarget(type);
+  if (target === BuildingType.TypeNone) return { planks: 0, stones: 0 };
+  const from = constInfo()[type];
+  const to = constInfo()[target];
+  return {
+    planks: Math.max(1, to.planks - from.planks),
+    stones: Math.max(1, to.stones - from.stones),
+  };
+}
+
+// EXT: game ticks of work per plank or stone of an upgrade, counted once
+// the last of them has arrived (hut to tower 3072 ticks, tower to fortress
+// 5120; a game update at normal speed is 2 ticks).
+export const kUpgradeWorkTicksPerUnit = 1024;
+
+export function upgradeWorkTicks(type: BuildingType): number {
+  const cost = upgradeCost(type);
+  return kUpgradeWorkTicksPerUnit * (cost.planks + cost.stones);
+}
+
+// EXT: gold bars a military building holds (the maxGold of
+// Building::set_first_knight and Building::update_military).
+export function militaryMaxGold(type: BuildingType): number {
+  switch (type) {
+    case BuildingType.TypeHut: return 2;
+    case BuildingType.TypeTower: return 4;
+    case BuildingType.TypeFortress: return 8;
+    default: return 0;
+  }
+}
+
+// EXT: why Game::getUpgradeRefusal() says no.
+export enum UpgradeRefusal {
+  None = 0,
+  /* No building of the player at the position. */
+  NotOwn,
+  /* Not a guard hut or a tower. */
+  WrongType,
+  NotFinished,
+  Burning,
+  /* No knight has moved in yet. */
+  NotOccupied,
+  /* An upgrade is under way already. */
+  InProgress,
+  /* A guard hut where no large building could stand. */
+  NoRoom,
+}
+
+// EXT: end of the new tables.
+// ---------------------------------------------------------------------------
+
 export class Building extends GameObject {
   static Type = BuildingType;
 
@@ -183,6 +316,17 @@ export class Building extends GameObject {
   queuedType: BuildingType;
   u: BuildingU;
   inventory: Inventory | null;
+  // EXT: production controls. extPaused: the worker starts no new work.
+  // extCap: 0, or the worker starts no new work while the owner's
+  // inventories hold this many of the building's output or more.
+  extPaused: boolean;
+  extCap: number;
+  // EXT: upgrade in place. upgradeTo is the type the building becomes
+  // (TypeNone: no upgrade under way). The planks, then the stones, come to
+  // stock[2]. upgradeTimer is the work left in ticks once all have arrived
+  // (0 before).
+  upgradeTo: BuildingType;
+  upgradeTimer: number;
 
   constructor(game: Game, index: number) {
     super(game, index);
@@ -217,6 +361,11 @@ export class Building extends GameObject {
     this.firstKnight = 0;
     this.burningCounter = 0;
     this.queuedType = BuildingType.TypeNone;
+    // EXT:
+    this.extPaused = false;
+    this.extCap = 0;
+    this.upgradeTo = BuildingType.TypeNone;
+    this.upgradeTimer = 0;
   }
 
   getPosition(): MapPos {
@@ -325,6 +474,10 @@ export class Building extends GameObject {
     return this.owner;
   }
   setOwner(newOwner: number): void {
+    // EXT: an upgrade does not survive the capture of the building.
+    if (this.upgradeTo !== BuildingType.TypeNone && newOwner !== this.owner) {
+      this.cancelUpgrade();
+    }
     this.owner = newOwner;
   }
   /* Whether construction of the building is finished. */
@@ -523,6 +676,12 @@ export class Building extends GameObject {
 
     /* Remove stock from building. */
     this.removeStock();
+    // EXT: and what came for an upgrade.
+    if (this.upgradeTo !== BuildingType.TypeNone) {
+      this.upgradeTo = BuildingType.TypeNone;
+      this.upgradeTimer = 0;
+      this.clearUpgradeStock();
+    }
 
     this.stopPlayingSfx();
 
@@ -950,7 +1109,9 @@ export class Building extends GameObject {
       let offset: number;
       while ((offset = borderCheckOffsets[k++]) >= 0) {
         const checkPos = map.posAddSpirally(this.getPosition(), offset);
-        if (map.hasOwner(checkPos) && map.getOwner(checkPos) !== this.owner) {
+        // EXT: the land of an ally is no threat.
+        if (map.hasOwner(checkPos) && map.getOwner(checkPos) !== this.owner &&
+            !this.game.isAllied(this.owner, map.getOwner(checkPos))) {
           this.threatLevel = f;
           return;
         }
@@ -960,6 +1121,172 @@ export class Building extends GameObject {
 
   setThreatLevel(level: number): void {
     this.threatLevel = level;
+  }
+
+  // -------------------------------------------------------------------------
+  // EXT: production controls.
+
+  setProductionPaused(paused: boolean): void {
+    this.extPaused = paused;
+  }
+  isProductionPaused(): boolean {
+    return this.extPaused;
+  }
+  setProductionCap(cap: number): void {
+    this.extCap = cap;
+  }
+  getProductionCap(): number {
+    return this.extCap;
+  }
+
+  /* Why the worker starts no new work: paused by the player, or the
+     owner's inventories hold the cap of the output or more. The serf state
+     handlers and the stock requests of update() ask this. */
+  getProductionHold(): ProductionHold {
+    if (this.extPaused) return ProductionHold.Paused;
+    if (this.extCap > 0) {
+      const res = productionOutput(this.type);
+      if (res !== ResourceType.TypeNone &&
+          this.game.getStockCount(this.owner, res) >= this.extCap) {
+        return ProductionHold.Capped;
+      }
+    }
+    return ProductionHold.None;
+  }
+  isProductionHeld(): boolean {
+    /* The common case first: nothing set, nothing read. */
+    if (!this.extPaused && this.extCap === 0) return false;
+    return this.getProductionHold() !== ProductionHold.None;
+  }
+
+  // -------------------------------------------------------------------------
+  // EXT: upgrade in place (guard hut to tower to fortress).
+
+  getUpgradeTo(): BuildingType {
+    return this.upgradeTo;
+  }
+  isUpgrading(): boolean {
+    return this.upgradeTo !== BuildingType.TypeNone;
+  }
+  getUpgradeTimer(): number {
+    return this.upgradeTimer;
+  }
+
+  /* Planks and stones that have arrived for the upgrade under way. */
+  getUpgradeDelivered(): { planks: number; stones: number } {
+    if (this.upgradeTo === BuildingType.TypeNone) return { planks: 0, stones: 0 };
+    const cost = upgradeCost(this.type);
+    const s = this.stock[2];
+    if (s.type === ResourceType.TypePlank) return { planks: s.available, stones: 0 };
+    if (s.type === ResourceType.TypeStone) return { planks: cost.planks, stones: s.available };
+    return cost;
+  }
+
+  /* Begin the upgrade; Game::upgradeBuilding has checked that it is
+     allowed and reserves the site. The planks come first. */
+  startUpgrade(): void {
+    this.upgradeTo = upgradeTarget(this.type);
+    this.upgradeTimer = 0;
+    const s = this.stock[2];
+    s.type = ResourceType.TypePlank;
+    s.prio = 0;
+    s.available = 0;
+    s.requested = 0;
+    s.maximum = upgradeCost(this.type).planks;
+  }
+
+  private clearUpgradeStock(): void {
+    const s = this.stock[2];
+    s.type = ResourceType.TypeNone;
+    s.prio = 0;
+    s.available = 0;
+    s.requested = 0;
+    s.maximum = 0;
+  }
+
+  /* Give the upgrade up (the building was captured). What was delivered
+     is lost; a guard hut is a small building on the map again. */
+  cancelUpgrade(): void {
+    if (this.upgradeTo === BuildingType.TypeNone) return;
+    this.upgradeTo = BuildingType.TypeNone;
+    this.upgradeTimer = 0;
+    this.clearUpgradeStock();
+    if (constInfo()[this.type].mapObj === MapObject.ObjectSmallBuilding &&
+        this.game.getMap().getObj(this.pos) === MapObject.ObjectLargeBuilding) {
+      this.game.getMap().setObject(this.pos, MapObject.ObjectSmallBuilding, this.getIndex());
+    }
+  }
+
+  /* Part of update_military() while an upgrade is under way: ask for the
+     planks, then for the stones, then count the work down. */
+  private updateUpgrade(): void {
+    const s = this.stock[2];
+
+    if (this.upgradeTimer > 0) {
+      this.upgradeTimer -= this.game.getTickDiff();
+      if (this.upgradeTimer <= 0) this.finishUpgrade();
+      return;
+    }
+
+    if (s.available >= s.maximum) {
+      /* All of this material is here (so none is on the way). */
+      if (s.type === ResourceType.TypePlank) {
+        s.type = ResourceType.TypeStone;
+        s.prio = 0;
+        s.available = 0;
+        s.requested = 0;
+        s.maximum = upgradeCost(this.type).stones;
+      } else {
+        this.upgradeTimer = upgradeWorkTicks(this.type);
+        this.clearUpgradeStock();
+      }
+      return;
+    }
+
+    /* Request like a construction site with its builder (update_unfinished):
+       nothing during the emergency of that material. */
+    const player = this.game.getPlayer(this.getOwner())!;
+    const total = s.requested + s.available;
+    const emergency = s.type === ResourceType.TypePlank ? player.isOutOfPlanks() : player.isOutOfStone();
+    if (!emergency && total < s.maximum) {
+      s.prio = (0xff >> total) & ~BIT(0);
+    } else {
+      s.prio = 0;
+    }
+  }
+
+  /* The building becomes the new type where it stands: its knights and
+     its gold stay, its land grows by the rule of the new type. */
+  private finishUpgrade(): void {
+    const newType = this.upgradeTo;
+    const player = this.game.getPlayer(this.owner)!;
+
+    /* The counts and the score of the player: the old type goes as a
+       demolished one does, the new comes as a finished site does. */
+    player.buildingDemolished(this);
+    this.type = newType;
+    player.incompleteBuildingCount[newType] += 1;
+    player.buildingBuilt(this);
+
+    this.upgradeTo = BuildingType.TypeNone;
+    this.upgradeTimer = 0;
+    this.clearUpgradeStock();
+
+    /* More room for gold (stock 1 keeps what lies there). */
+    this.stock[1].maximum = militaryMaxGold(newType);
+
+    /* The knights inside train as those of the new type. */
+    let serfIndex = this.firstKnight;
+    for (let guard = 0; serfIndex !== 0 && guard < 1000; guard++) {
+      const serf = this.game.getSerf(serfIndex);
+      if (serf == null) break;
+      if (!serf.defendedBuildingUpgraded(newType)) break;
+      serfIndex = serf.getNext();
+    }
+
+    /* The land of the new type, with the messages about lost land for the
+       others, as when knights occupy a new building (set_first_knight). */
+    this.game.buildingCaptured(this);
   }
 
   update(tick: number): void {
@@ -1050,6 +1377,22 @@ export class Building extends GameObject {
       queuedType = reader.value('queued_type').readUint();
       this.queuedType = queuedType as BuildingType;
     }
+    // EXT: written only when set; older saves have none of them.
+    if (reader.hasValue('ext_paused')) {
+      this.extPaused = reader.value('ext_paused').readInt() !== 0;
+    }
+    if (reader.hasValue('ext_cap')) {
+      this.extCap = reader.value('ext_cap').readInt();
+    }
+    if (reader.hasValue('ext_upgrade')) {
+      this.upgradeTo = reader.value('ext_upgrade').readInt() as BuildingType;
+      this.upgradeTimer = reader.value('ext_upgrade_timer').readInt();
+      this.stock[2].type = reader.value('stock[2].type').readInt();
+      this.stock[2].prio = reader.value('stock[2].prio').readInt();
+      this.stock[2].available = reader.value('stock[2].available').readInt();
+      this.stock[2].requested = reader.value('stock[2].requested').readInt();
+      this.stock[2].maximum = reader.value('stock[2].maximum').readInt();
+    }
 
     if (reader.hasValue('inventory')) {
       let inventoryIndex: number;
@@ -1097,6 +1440,22 @@ export class Building extends GameObject {
     writer.value('progress').write(this.progress | (this.underAttack ? BIT(0) : 0));
     if (this.queuedType !== BuildingType.TypeNone) {
       writer.value('queued_type').write(this.queuedType);
+    }
+    // EXT:
+    if (this.extPaused) {
+      writer.value('ext_paused').write(this.extPaused);
+    }
+    if (this.extCap !== 0) {
+      writer.value('ext_cap').write(this.extCap);
+    }
+    if (this.upgradeTo !== BuildingType.TypeNone) {
+      writer.value('ext_upgrade').write(this.upgradeTo);
+      writer.value('ext_upgrade_timer').write(this.upgradeTimer);
+      writer.value('stock[2].type').write(this.stock[2].type);
+      writer.value('stock[2].prio').write(this.stock[2].prio);
+      writer.value('stock[2].available').write(this.stock[2].available);
+      writer.value('stock[2].requested').write(this.stock[2].requested);
+      writer.value('stock[2].maximum').write(this.stock[2].maximum);
     }
 
     if (this.inventory !== null) {
@@ -1383,6 +1742,13 @@ export class Building extends GameObject {
           break;
         default:
           break;
+      }
+
+      // EXT: a paused or capped building asks for no more input. What is
+      // on the way still arrives.
+      if (this.isProductionHeld()) {
+        stock[0].prio = 0;
+        stock[1].prio = 0;
       }
     } else {
       /* Unfinished */
@@ -1739,6 +2105,11 @@ export class Building extends GameObject {
       } else {
         stock[1].prio = 0;
       }
+    }
+
+    // EXT: the material and the work of an upgrade.
+    if (this.upgradeTo !== BuildingType.TypeNone) {
+      this.updateUpgrade();
     }
   }
 

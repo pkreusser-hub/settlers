@@ -6,11 +6,29 @@
 // finished while the window is open becomes the window of the workshop.
 // Not part of Freeserf.
 
-import { Building, BuildingType } from '../../game/building';
+import {
+  Building,
+  BuildingType,
+  ProductionHold,
+  UpgradeRefusal,
+  isProductionBuilding,
+  militaryMaxGold,
+  productionCapSteps,
+  productionOutput,
+  upgradeCost,
+  upgradeTarget,
+  upgradeWorkTicks,
+} from '../../game/building';
 import type { Game } from '../../game/game';
 import { BIT_TEST } from '../../game/misc';
 import { ResourceType } from '../../game/resource';
 import { SerfType } from '../../game/serf';
+import {
+  cmdSetBuildingCap,
+  cmdSetBuildingPaused,
+  cmdUpgradeBuilding,
+  upgradeRefusal,
+} from '../../net/commands';
 import { PopupBoxType } from '../popup';
 import {
   buildingCost,
@@ -33,7 +51,7 @@ import {
 import type { Pin } from './building-parts';
 import type { BoxContext, BoxView, Widget } from './kit';
 import { resourceLabel, serfName } from './names';
-import { el, meter, numberGrid, numberRow, resourceIcon, section, serfIcon } from './widgets';
+import { button, buildingIcon, el, fitHeight, meter, numberGrid, numberRow, resourceIcon, section, segmented, serfIcon, toggle } from './widgets';
 
 type Kind = 'site' | 'military' | 'mine' | 'workshop';
 
@@ -224,7 +242,22 @@ function activeStocks(building: Building): number[] {
   return list;
 }
 
+/* Why a building makes nothing although it could: paused by the player, or
+   its output cap is reached (Building.getProductionHold). '' if neither. */
+export function holdText(building: Building): string {
+  switch (building.getProductionHold()) {
+    case ProductionHold.Paused:
+      return 'Paused';
+    case ProductionHold.Capped:
+      return `Waiting: enough ${resourceName(productionOutput(building.getType()))} in stock`;
+    default:
+      return '';
+  }
+}
+
 function workshopState(building: Building): string {
+  const held = holdText(building);
+  if (held !== '') return held;
   const worker = workerOf(building.getType());
   if (!building.hasSerf()) {
     return worker === null ? 'Nobody here yet' : `Waiting for its ${serfName(worker).toLowerCase()}`;
@@ -274,6 +307,8 @@ export function mineOutputPercent(building: Building): number {
 }
 
 function mineState(building: Building): string {
+  const held = holdText(building);
+  if (held !== '') return held;
   if (!building.hasSerf()) return 'Waiting for its miner';
   if (building.getResCountInStock(0) === 0) return 'Staffed, out of food';
   return 'Staffed';
@@ -358,6 +393,9 @@ function militaryState(game: Game, building: Building): string {
     ? 'No knights here yet'
     : `Held by ${plural(count, 'knight', 'knights')}`;
   if (building.isUnderAttack()) text += ', under attack';
+  if (building.isUpgrading()) {
+    text += `, becoming a ${buildingName(building.getUpgradeTo()).toLowerCase()}`;
+  }
   return text;
 }
 
@@ -414,8 +452,186 @@ function militaryRows(game: Game, b: () => Building | null): (Widget | HTMLEleme
 export function buildingActions(ctx: BoxContext, building: () => Building | null): (Widget | HTMLElement)[] {
   const b = building();
   const items: (Widget | HTMLElement)[] = [];
+  if (b !== null && b.isDone() && isProductionBuilding(b.getType())) {
+    items.push(...productionControls(ctx, building));
+  }
+  if (b !== null && b.isDone() && upgradeTarget(b.getType()) !== BuildingType.TypeNone) {
+    items.push(upgradeControl(ctx, building));
+  }
   if (b !== null && canDemolish(b)) items.push(demolishControl(ctx, building));
   return items;
+}
+
+/* What decides which controls buildingActions() makes. */
+function actionsSignature(building: Building): string {
+  return `${building.getType()}|${building.isDone()}|${canDemolish(building)}`;
+}
+
+/* A control that takes the whole width of the Actions section. */
+function wide(widget: Widget): Widget {
+  widget.el.classList.add('bw-action-wide');
+  return widget;
+}
+
+/* Pause and output cap of a production building (cmdSetBuildingPaused,
+   cmdSetBuildingCap). The cap is left out where the building has no single
+   output: forester, toolmaker, weaponsmith. */
+function productionControls(ctx: BoxContext, building: () => Building | null): Widget[] {
+  const { game } = ctx;
+  const b = building();
+  if (b === null) return [];
+  const controls: Widget[] = [
+    wide(toggle({
+      label: 'Production',
+      get: () => !(building()?.isProductionPaused() ?? false),
+      set: (on) => {
+        const cur = building();
+        if (cur !== null) cmdSetBuildingPaused(game, cur.getPosition(), !on);
+      },
+      onText: 'Running',
+      offText: 'Paused',
+      title: 'Paused: the worker finishes what he is doing and starts nothing new. The building asks for no more goods.',
+    })),
+  ];
+  const output = productionOutput(b.getType());
+  if (output !== ResourceType.TypeNone) {
+    const what = resourceName(output);
+    controls.push(wide(segmented({
+      label: `Stop while the stock of ${what} is at least`,
+      options: productionCapSteps.map((step) => ({
+        value: step,
+        label: step === 0 ? 'Off' : String(step),
+        title: step === 0
+          ? 'Work whatever is in stock.'
+          : `Start no new work while your castle and storehouses hold ${step} ${what} or more.`,
+      })),
+      get: () => building()?.getProductionCap() ?? 0,
+      set: (step) => {
+        const cur = building();
+        if (cur !== null && cur.getProductionCap() !== step) cmdSetBuildingCap(game, cur.getPosition(), step);
+      },
+    })));
+    controls.push(wide(numberRow({
+      label: `${what.charAt(0).toUpperCase()}${what.slice(1)} in stock`,
+      icon: resourceIcon(output),
+      title: 'In your castle and storehouses, as the stock panel counts it.',
+      get: () => {
+        const cur = building();
+        return cur === null ? '' : game.getStockCount(cur.getOwner(), output);
+      },
+    })));
+  }
+  return controls;
+}
+
+/* Knights a military building holds at most (Building::
+   is_enough_place_for_knight). */
+function knightRoom(type: BuildingType): number {
+  switch (type) {
+    case BuildingType.TypeHut: return 3;
+    case BuildingType.TypeTower: return 6;
+    case BuildingType.TypeFortress: return 12;
+    default: return 0;
+  }
+}
+
+const upgradeRefusalText: { [code: number]: string } = {
+  [UpgradeRefusal.NotOwn]: 'Not your building.',
+  [UpgradeRefusal.WrongType]: 'This building cannot be upgraded.',
+  [UpgradeRefusal.NotFinished]: 'Not finished yet.',
+  [UpgradeRefusal.Burning]: 'The building is burning.',
+  [UpgradeRefusal.NotOccupied]: 'No knights have moved in yet.',
+  [UpgradeRefusal.InProgress]: 'The upgrade is under way.',
+  [UpgradeRefusal.NoRoom]: 'No room: the upgrade needs the site of a large building.',
+};
+
+function countOf(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/* How far the upgrade under way is: the material delivered, then the work
+   (Building.updateUpgrade). The material is three quarters of the bar. */
+function upgradeProgress(building: Building): { fill: number; text: string } {
+  const cost = upgradeCost(building.getType());
+  const total = cost.planks + cost.stones;
+  const timer = building.getUpgradeTimer();
+  if (timer > 0) {
+    const work = upgradeWorkTicks(building.getType());
+    const done = Math.max(0, Math.min(1, (work - timer) / work));
+    return { fill: 0.75 + 0.25 * done, text: `All material here, work ${Math.floor(done * 100)}% done` };
+  }
+  const got = building.getUpgradeDelivered();
+  const coming = building.getRequestedInStock(2);
+  return {
+    fill: (0.75 * (got.planks + got.stones)) / total,
+    text: `${got.planks} of ${countOf(cost.planks, 'plank', 'planks')}, ${got.stones} of ${cost.stones} stone delivered` +
+      (coming > 0 ? `, ${coming} on the way` : ''),
+  };
+}
+
+/* Upgrade of a guard hut to a tower or of a tower to a fortress where it
+   stands (cmdUpgradeBuilding): the button with what it costs and gives,
+   the reason when it is not allowed, the progress while it runs. */
+function upgradeControl(ctx: BoxContext, building: () => Building | null): Widget {
+  const { game, player } = ctx;
+  return wide(dynamic(
+    () => {
+      const cur = building();
+      if (cur === null) return '';
+      const refusal = upgradeRefusal(game, cur.getPosition(), player);
+      return `${cur.getType()}|${cur.getUpgradeTo()}|${refusal}`;
+    },
+    () => {
+      const cur = building();
+      if (cur === null) return [];
+      const type = cur.getType();
+
+      if (cur.isUpgrading()) {
+        const row = meter({
+          label: `Upgrade to ${buildingName(cur.getUpgradeTo()).toLowerCase()}`,
+          title: 'The building keeps its knights and its land while the planks and the stone come and the work is done.',
+          get: () => {
+            const now = building();
+            return now === null || !now.isUpgrading() ? { fill: 0, text: '' } : upgradeProgress(now);
+          },
+        });
+        row.el.classList.add('bw-wide-value');
+        return [row];
+      }
+
+      const target = upgradeTarget(type);
+      if (target === BuildingType.TypeNone) return [];
+      const targetName = buildingName(target).toLowerCase();
+      const cost = upgradeCost(type);
+      const refusal = upgradeRefusal(game, cur.getPosition(), player);
+      const start = button(`Upgrade to ${targetName}`, () => {
+        const now = building();
+        if (now !== null) cmdUpgradeBuilding(game, now.getPosition());
+      }, { icon: fitIcon(target, ctx), title: 'The building stays in use while it is upgraded. An upgrade cannot be cancelled.' });
+      start.disabled = refusal !== UpgradeRefusal.None;
+      const gives = el(
+        'p',
+        'bw-action-note',
+        `Costs ${countOf(cost.planks, 'plank', 'planks')} and ${cost.stones} stone. ` +
+        `A ${targetName} holds up to ${knightRoom(target)} knights (now ${knightRoom(type)}) ` +
+        `and ${militaryMaxGold(target)} gold bars (now ${militaryMaxGold(type)}), ` +
+        'and holds its land more firmly against enemy buildings.',
+      );
+      const items: (Widget | HTMLElement)[] = [start, gives];
+      if (refusal !== UpgradeRefusal.None) {
+        const reason = el('p', 'bw-action-note bw-action-reason', upgradeRefusalText[refusal] ?? 'Not possible now.');
+        reason.setAttribute('role', 'status');
+        items.push(reason);
+      }
+      return items;
+    },
+    'bw-action-list',
+  ));
+}
+
+/* The picture of a building type for a button, in the player's colour. */
+function fitIcon(type: BuildingType, ctx: BoxContext): HTMLCanvasElement {
+  return fitHeight(buildingIcon(type, ctx.player.getColor()), 1.6);
 }
 
 /* The box the viewport opens for a finished building (Viewport::
@@ -476,7 +692,7 @@ function buildingInfoBox(ctx: BoxContext): BoxView {
       },
     ),
     dynamic(
-      () => (cur === null ? '' : `${cur.getType()}|${canDemolish(cur)}`),
+      () => (cur === null ? '' : actionsSignature(cur)),
       () => [actionsSection(buildingActions(ctx, b))],
     ),
   );

@@ -330,7 +330,9 @@ export class Inventory extends GameObject {
   }
 
   /* Create initial resources */
-  applySuppliesPreset(supplies: number): void {
+  // EXT: `preset` is the stock preset of the game (STOCK_* of game.ts);
+  // 0, normal, is the original.
+  applySuppliesPreset(supplies: number, preset = 0): void {
     const suppliesTemplate: number[][] = [
       [0, 0, 0, 0, 0, 0, 0, 7, 0, 2, 0, 0, 0, 0, 0, 1,
         6, 1, 0, 0, 1, 2, 3, 0, 10, 10],
@@ -372,6 +374,19 @@ export class Inventory extends GameObject {
       const n = u32(Math.imul(template2[i] - template1[i], Math.imul(supplies, 6554)));
       if (n >= 0x8000) t1 += 1;
       this.resources.set(i as ResourceType, u32(t1 + (n >>> 16)));
+    }
+
+    // EXT: stock presets. Poor (1) is half of each resource, rounded up, but
+    // not less than the stock of supplies 0; rich (2) is one and a half
+    // times each resource, rounded up.
+    if (preset === 1 || preset === 2) {
+      for (let i = 0; i < 26; i++) {
+        const count = this.res(i as ResourceType);
+        const half = (count + 1) >>> 1;
+        const scaled = preset === 1 ? Math.max(half, Math.min(count, suppliesTemplate[0][i]))
+                                    : count + half;
+        this.resources.set(i as ResourceType, u32(scaled));
+      }
     }
   }
 

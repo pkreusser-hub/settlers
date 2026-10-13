@@ -5,12 +5,13 @@
 // as in that box. Not part of Freeserf.
 
 import type { Building } from '../../game/building';
-import { canAttack, cmdStartAttack, previewAttack } from '../../net/commands';
+import { attackRefusal, cmdStartAttack, isAttackBoxTarget, previewAttack } from '../../net/commands';
 import { AudioTypeSfx } from '../audio';
 import { PopupBoxType } from '../popup';
 import { buildingName } from '../production';
 import { actionsSection, objectHeader } from './building-parts';
 import type { BoxContext, BoxView, Widget } from './kit';
+import { relationName, teamName, ticksAsClock } from './names';
 import {
   button,
   buildingIcon,
@@ -58,10 +59,39 @@ function attackBox(ctx: BoxContext): BoxView {
     if (attack.pos !== pinned) return null;
     const building = game.getBuilding(attack.buildingAttacked);
     if (building === null || building.getPosition() !== pinned) return null;
-    if (!canAttack(game, pinned, player)) return null;
+    /* GAME OPTIONS: a building of an ally stays in the window, which says
+       why there is no attack on it. */
+    if (!isAttackBoxTarget(game, pinned, player)) return null;
     return building;
   };
   let target = findTarget();
+
+  /* GAME OPTIONS: "Player 2, Team B, enemy" when the game has teams. */
+  const ownerText = (owner: number): string => {
+    const parts = [playerLabel(owner)];
+    if (game.hasTeams()) {
+      const other = game.getPlayer(owner);
+      const team = other === null ? '' : teamName(other.getTeam());
+      parts.push(team !== '' ? team : 'no team');
+      const relation = relationName(game, player.getIndex(), owner);
+      if (relation !== '') parts.push(relation === 'ally' ? 'your ally' : relation);
+    }
+    return parts.join(', ');
+  };
+
+  /* GAME OPTIONS: why the rules allow no attack now, or ''. */
+  const refusalText = (): string => {
+    if (target === null) return '';
+    switch (attackRefusal(game, pinned, player)) {
+      case 'ally':
+        return `${playerLabel(target.getOwner())} is your ally. You cannot attack an ally.`;
+      case 'peace':
+        return `Peace: nobody can attack for another ${ticksAsClock(game.getPeaceTicksLeft())} ` +
+          'of game time.';
+      default:
+        return '';
+    }
+  };
 
   win.add(
     objectHeader({
@@ -72,7 +102,7 @@ function attackBox(ctx: BoxContext): BoxView {
         return buildingIcon(target.getType(), owner?.getColor());
       },
       name: () => (target === null ? '' : buildingName(target.getType())),
-      state: () => (target === null ? '' : `Held by ${playerLabel(target.getOwner())}`),
+      state: () => (target === null ? '' : `Held by ${ownerText(target.getOwner())}`),
     }),
   );
 
@@ -83,7 +113,7 @@ function attackBox(ctx: BoxContext): BoxView {
       return numberRow({
         label: 'Owner',
         icon: owner === null ? undefined : fitHeight(faceCanvas(owner.getFace(), owner.getColor()), 3),
-        get: () => (target === null ? '' : playerLabel(target.getOwner())),
+        get: () => (target === null ? '' : ownerText(target.getOwner())),
       });
     })(),
   );
@@ -144,6 +174,11 @@ function attackBox(ctx: BoxContext): BoxView {
   );
 
   const start = button('Attack', () => {
+    /* GAME OPTIONS: the command would be refused. */
+    if (refusalText() !== '') {
+      ctx.sound(AudioTypeSfx.TypeSfxNotAccepted);
+      return;
+    }
     /* ACTION_START_ATTACK. */
     if (attack.knightsAttacking > 0) {
       if (attack.attackingBuildingCount > 0) {
@@ -156,7 +191,23 @@ function attackBox(ctx: BoxContext): BoxView {
     }
   }, { kind: 'primary', icon: iconCanvas(222), title: 'Send the knights against this building' });
 
-  win.add(actionsSection(enemyActions(ctx, start)));
+  /* GAME OPTIONS: the reason there is no attack, above the button it turns
+     off. */
+  const refusal = el('p', 'bw-refusal');
+  refusal.setAttribute('role', 'status');
+  let refusalShown = '?';
+  const showRefusal = (): void => {
+    const text = refusalText();
+    if (text === refusalShown) return;
+    refusalShown = text;
+    refusal.textContent = text;
+    refusal.hidden = text === '';
+    start.disabled = text !== '';
+    start.title = text !== '' ? text : 'Send the knights against this building';
+  };
+  showRefusal();
+
+  win.add(actionsSection([refusal, ...enemyActions(ctx, start)]));
   win.initialFocus = start;
   win.foot().append(
     /* ACTION_CLOSE_ATTACK_BOX. */
@@ -171,6 +222,7 @@ function attackBox(ctx: BoxContext): BoxView {
         ctx.close();
         return;
       }
+      showRefusal();
       /* The knights change while the window is open: count them again
          once a second, as the click on the building did. The command
          counts them once more when it runs. */

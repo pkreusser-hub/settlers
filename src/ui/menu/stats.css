@@ -94,3 +94,9 @@
 .stat-win .mk-meter .mk-value {
   white-space: nowrap;
 }
+
+/* The team of a player under its name. */
+.stat-team {
+  display: block;
+  color: var(--gx-text-dim);
+}

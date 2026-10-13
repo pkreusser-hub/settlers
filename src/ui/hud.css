@@ -57,3 +57,15 @@
   opacity: 0.4;
   cursor: default;
 }
+
+/* The peace timer: a value, not a button. Hidden when no peace runs. */
+#hud .hud-group[hidden] {
+  display: none;
+}
+
+#hud .hud-value {
+  padding: 0 6px 0 0;
+  line-height: 30px;
+  color: var(--gx-text);
+  font-variant-numeric: tabular-nums;
+}

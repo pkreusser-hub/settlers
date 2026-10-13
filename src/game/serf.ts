@@ -820,6 +820,44 @@ export class Serf extends GameObject {
   getNext(): number { return this.s.defending.nextKnight >>> 0; }
   setNext(next: number): void { this.s.defending.nextKnight = next; }
 
+  // EXT: the building this knight defends was upgraded in place
+  // (Building::finishUpgrade): he defends, and trains, as a knight of the
+  // new type. False if he is not in a defending state (the list of the
+  // building ends there).
+  defendedBuildingUpgraded(type: BuildingType): boolean {
+    if (this.state !== SerfState.StateDefendingHut &&
+        this.state !== SerfState.StateDefendingTower &&
+        this.state !== SerfState.StateDefendingFortress) {
+      return false;
+    }
+    switch (type) {
+      case BuildingType.TypeTower:
+        this.setState(SerfState.StateDefendingTower);
+        break;
+      case BuildingType.TypeFortress:
+        this.setState(SerfState.StateDefendingFortress);
+        break;
+      default:
+        break;
+    }
+    return true;
+  }
+
+  // EXT: whether the building this worker stands in is paused or capped
+  // (Building::isProductionHeld): he starts no new round of work then.
+  protected workHeld(): boolean {
+    const building = this.game.getBuildingAtPos(this.pos);
+    return building != null && building.isProductionHeld();
+  }
+
+  // EXT: a worker who plans his next walk in a held building waits. The
+  // tick is kept current so that no time piles up for the counter.
+  protected planningHeld(): boolean {
+    if (!this.workHeld()) return false;
+    this.tick = u16(this.game.getTick());
+    return true;
+  }
+
   static getStateName(state: SerfState): string {
     return serfStateName[state];
   }
@@ -3589,6 +3627,9 @@ export class Serf extends GameObject {
   }
 
   protected handleSerfPlanningLoggingState(): void {
+    // EXT: the woodcutter of a paused or capped building stays in.
+    if (this.planningHeld()) return;
+
     const delta = u16(this.game.getTick() - this.tick);
     this.tick = u16(this.game.getTick());
     this.counter -= delta;
@@ -3615,6 +3656,9 @@ export class Serf extends GameObject {
   }
 
   protected handleSerfPlanningPlantingState(): void {
+    // EXT: the forester of a paused or capped building stays in.
+    if (this.planningHeld()) return;
+
     const delta = u16(this.game.getTick() - this.tick);
     this.tick = u16(this.game.getTick());
     this.counter -= delta;
@@ -3676,6 +3720,9 @@ export class Serf extends GameObject {
   }
 
   protected handleSerfPlanningStonecutting(): void {
+    // EXT: the stonecutter of a paused or capped building stays in.
+    if (this.planningHeld()) return;
+
     const delta = u16(this.game.getTick() - this.tick);
     this.tick = u16(this.game.getTick());
     this.counter -= delta;
@@ -3774,6 +3821,8 @@ export class Serf extends GameObject {
     if (this.s.sawing.mode === 0) {
       const building =
                           this.game.getBuilding(this.game.getMap().getObjIndex(this.pos))!;
+      // EXT: a paused or capped building starts no new round.
+      if (building.isProductionHeld()) return;
       if (building.useResourceInStock(1)) {
         this.s.sawing.mode = 1;
         this.animation = 124;
@@ -3970,6 +4019,12 @@ export class Serf extends GameObject {
       Log.Verbose('serf', 'mining substate: ', this.s.mining.substate, '.');
       switch (this.s.mining.substate) {
         case 0: {
+          // EXT: the miner of a paused or capped mine starts no new round
+          // (and draws no random number); he looks again later.
+          if (building.isProductionHeld()) {
+            this.counter += 256;
+            break;
+          }
           /* There is a small chance that the miner will
              not require food and skip to state 2. */
           const r = this.game.randomInt();
@@ -4087,6 +4142,8 @@ export class Serf extends GameObject {
     const building = this.game.getBuilding(this.game.getMap().getObjIndex(this.pos))!;
 
     if (this.s.smelting.mode === 0) {
+      // EXT: a paused or capped building starts no new round.
+      if (building.isProductionHeld()) return;
       if (building.useResourcesInStocks()) {
         building.startActivity();
 
@@ -4139,6 +4196,9 @@ export class Serf extends GameObject {
   }
 
   protected handleSerfPlanningFishingState(): void {
+    // EXT: the fisher of a paused or capped building stays in.
+    if (this.planningHeld()) return;
+
     const delta = u16(this.game.getTick() - this.tick);
     this.tick = u16(this.game.getTick());
     this.counter -= delta;
@@ -4223,6 +4283,9 @@ export class Serf extends GameObject {
   }
 
   protected handleSerfPlanningFarmingState(): void {
+    // EXT: the farmer of a paused or capped building stays in.
+    if (this.planningHeld()) return;
+
     const delta = u16(this.game.getTick() - this.tick);
     this.tick = u16(this.game.getTick());
     this.counter -= delta;
@@ -4317,6 +4380,8 @@ export class Serf extends GameObject {
     const building = this.game.getBuilding(this.game.getMap().getObjIndex(this.pos))!;
 
     if (this.s.milling.mode === 0) {
+      // EXT: a paused or capped building starts no new round.
+      if (building.isProductionHeld()) return;
       if (building.useResourceInStock(0)) {
         building.startActivity();
 
@@ -4361,6 +4426,8 @@ export class Serf extends GameObject {
     const building = this.game.getBuilding(this.game.getMap().getObjIndex(this.pos))!;
 
     if (this.s.baking.mode === 0) {
+      // EXT: a paused or capped building starts no new round.
+      if (building.isProductionHeld()) return;
       if (building.useResourceInStock(0)) {
         this.s.baking.mode = 1;
         this.animation = 138;
@@ -4407,6 +4474,8 @@ export class Serf extends GameObject {
     const building = this.game.getBuildingAtPos(this.pos)!;
 
     if (this.s.pigfarming.mode === 0) {
+      // EXT: a paused or capped building starts no new round.
+      if (building.isProductionHeld()) return;
       if (building.useResourceInStock(0)) {
         this.s.pigfarming.mode = 1;
         this.animation = 139;
@@ -4427,6 +4496,11 @@ export class Serf extends GameObject {
             this.game.getMap().setSerfIndex(this.pos, this.index);
             this.animation = 139;
             this.counter = counterFromAnimation[this.animation];
+          } else if (building.isProductionHeld()) {
+            // EXT: at the end of a round a paused or capped pig farm
+            // neither hands out a pig nor goes on without wheat (no random
+            // number is drawn): the farmer waits in mode 0.
+            this.s.pigfarming.mode = 0;
           } else if (building.pigsCount() === 8 ||
                      (building.pigsCount() > 3 &&
                       ((20*this.game.randomInt()) >> 16) < building.pigsCount())) {
@@ -4467,6 +4541,8 @@ export class Serf extends GameObject {
     const building = this.game.getBuilding(this.game.getMap().getObjIndex(this.pos))!;
 
     if (this.s.butchering.mode === 0) {
+      // EXT: a paused or capped building starts no new round.
+      if (building.isProductionHeld()) return;
       if (building.useResourceInStock(0)) {
         this.s.butchering.mode = 1;
         this.animation = 140;
@@ -4504,6 +4580,9 @@ export class Serf extends GameObject {
          Bit 3 is set if a sword has been made and a
          shield can be made without more resources. */
       /* TODO Use of this bit overlaps with sfx check bit. */
+      // EXT: a paused weaponsmith starts neither a sword nor the shield
+      // that follows it.
+      if (building.isProductionHeld()) return;
       if (!building.isPlayingSfx()) {
         if (!building.useResourcesInStocks()) {
           return;
@@ -4558,6 +4637,8 @@ export class Serf extends GameObject {
     const building = this.game.getBuilding(this.game.getMap().getObjIndex(this.pos))!;
 
     if (this.s.makingTool.mode === 0) {
+      // EXT: a paused or capped building starts no new round.
+      if (building.isProductionHeld()) return;
       if (building.useResourcesInStocks()) {
         this.s.makingTool.mode = 1;
         this.animation = 144;
@@ -4618,6 +4699,8 @@ export class Serf extends GameObject {
     const building = this.game.getBuilding(map.getObjIndex(this.pos))!;
 
     if (this.s.buildingBoat.mode === 0) {
+      // EXT: a paused or capped building starts no new round.
+      if (building.isProductionHeld()) return;
       if (!building.useResourceInStock(0)) return;
       building.boatClear();
 
@@ -5099,7 +5182,9 @@ export class Serf extends GameObject {
 
         if (map.hasSerf(pos_)) {
           const other = this.game.getSerfAtPos(pos_)!;
-          if (this.getOwner() !== other.getOwner()) {
+          // EXT: knights of allies do not fight each other on the way.
+          if (this.getOwner() !== other.getOwner() &&
+              !this.game.isAllied(this.getOwner(), other.getOwner())) {
             if (other.state === SerfState.StateKnightFreeWalking) {
               pos_ = map.moveLeft(pos_);
               if (this.canPassMapPos(pos_)) {
@@ -5144,9 +5229,13 @@ export class Serf extends GameObject {
                 this.animation = 99;
                 this.counter = 255;
 
-                const dest = this.game.getFlag(other.s.walking.dest)!;
-                const building = dest.getBuilding()!;
-                if (!building.hasInventory()) {
+                // PORT: the C++ dereferences the flag and its building
+                // unchecked. The knight that is met may walk to a flag whose
+                // building is gone (or to no flag); the port threw there in
+                // games of computer players. Nothing is requested then.
+                const dest = this.game.getFlag(other.s.walking.dest);
+                const building = dest !== null ? dest.getBuilding() : null;
+                if (building !== null && !building.hasInventory()) {
                   building.requestedKnightAttackingOnWalk();
                 }
 

@@ -59,7 +59,7 @@ import { MessageType, Player } from './player';
 import type { AILocation, PlayerColor } from './player';
 import { AI } from './ai';
 import { Flag, FlagSearch, SerfPathInfo } from './flag';
-import { Building, BuildingType } from './building';
+import { Building, BuildingType, UpgradeRefusal, constInfo, upgradeTarget } from './building';
 import { Serf, SerfState, SerfType } from './serf';
 import { Inventory, InventoryMode } from './inventory';
 import type { SaveReaderText, SaveWriterText } from './savegame';
@@ -67,6 +67,47 @@ import type { SaveReaderText, SaveWriterText } from './savegame';
 export const DEFAULT_GAME_SPEED = 2;
 
 export const GAME_MAX_PLAYER_COUNT = 4;
+
+// EXT: game options and teams. Not in Freeserf; see "Extensions" in
+// CLAUDE.md. Every value is 0 by default, and with 0 the game runs as the
+// original does.
+
+/* EXT: the team of a player. Players of the same team (A or B) are allies;
+   a player without a team has none. */
+export const TEAM_NONE = 0;
+export const TEAM_A = 1;
+export const TEAM_B = 2;
+
+/* EXT: starting stock of every castle. Normal is what the supplies value of
+   the player gives; see Inventory.applySuppliesPreset(). */
+export const STOCK_NORMAL = 0;
+export const STOCK_POOR = 1;
+export const STOCK_RICH = 2;
+
+/* EXT: the peace timers a game can have, in minutes of game time; 0 is
+   none. A minute is 6000 ticks: the game counts 100 ticks a second at
+   normal speed. */
+export const PEACE_MINUTES_CHOICES: readonly number[] = [0, 10, 20, 30, 60];
+export const TICKS_PER_MINUTE = 6000;
+
+/* EXT: the options of a game, the same for every player. */
+export interface GameRules {
+  stockPreset: number; /* STOCK_NORMAL, STOCK_POOR, STOCK_RICH */
+  peaceMinutes: number; /* One of PEACE_MINUTES_CHOICES. */
+}
+
+export function isValidTeam(v: unknown): v is number {
+  return v === TEAM_NONE || v === TEAM_A || v === TEAM_B;
+}
+
+export function isValidGameRules(v: unknown): v is GameRules {
+  if (typeof v !== 'object' || v === null) return false;
+  const rules = v as GameRules;
+  return (rules.stockPreset === STOCK_NORMAL || rules.stockPreset === STOCK_POOR ||
+          rules.stockPreset === STOCK_RICH) &&
+         typeof rules.peaceMinutes === 'number' &&
+         PEACE_MINUTES_CHOICES.includes(rules.peaceMinutes);
+}
 
 const GROUND_ANALYSIS_RADIUS = 25;
 
@@ -221,6 +262,11 @@ export class Game {
   protected winningPlayer: number;
   protected gameEndPending: boolean;
 
+  // EXT: game options (GameRules). Saved as "stock_preset" and
+  // "peace_minutes"; the teams are in the players.
+  protected stockPreset = STOCK_NORMAL;
+  protected peaceMinutes = 0;
+
   /* Work fields of the computer players. */
   protected aiGame: GameAIFields;
 
@@ -354,6 +400,112 @@ export class Game {
   clearGameEndPending(): void {
     this.gameEndPending = false;
   }
+
+  // EXT: game options and teams (to the end of this block).
+
+  getRules(): GameRules {
+    return { stockPreset: this.stockPreset, peaceMinutes: this.peaceMinutes };
+  }
+
+  /* Set before the first castle is built; values that are not valid leave
+     the defaults. */
+  setRules(rules: GameRules): void {
+    if (!isValidGameRules(rules)) return;
+    this.stockPreset = rules.stockPreset;
+    this.peaceMinutes = rules.peaceMinutes;
+  }
+
+  /* Ticks until attacks are allowed, 0 when they are. */
+  getPeaceTicksLeft(): number {
+    const end = this.peaceMinutes * TICKS_PER_MINUTE;
+    return this.tick < end ? end - this.tick : 0;
+  }
+
+  /* Whether the peace timer still runs: nobody may start an attack. */
+  isPeace(): boolean {
+    return this.getPeaceTicksLeft() > 0;
+  }
+
+  /* Whether a player has a team. */
+  hasTeams(): boolean {
+    for (const player of this.players) {
+      if (player.getTeam() !== TEAM_NONE) return true;
+    }
+    return false;
+  }
+
+  /* Whether two different players are in the same team. */
+  isAllied(a: number, b: number): boolean {
+    if (a === b) return false;
+    const pa = this.players.get(a);
+    const pb = this.players.get(b);
+    if (pa == null || pb == null) return false;
+    return pa.getTeam() !== TEAM_NONE && pa.getTeam() === pb.getTeam();
+  }
+
+  /* Whether a player may start an attack on a building of another: not
+     during the peace and never on an ally. Player.startAttack() and the
+     startAttack command both ask here. */
+  mayAttack(attacker: number, defender: number): boolean {
+    if (attacker === defender) return false;
+    return !this.isPeace() && !this.isAllied(attacker, defender);
+  }
+
+  /* Whether the player has won: the winning player and its allies. */
+  isWinner(index: number): boolean {
+    if (this.winningPlayer < 0) return false;
+    return index === this.winningPlayer || this.isAllied(index, this.winningPlayer);
+  }
+
+  /* The winners once the game is decided, in the order of the players. */
+  getWinners(): number[] {
+    const winners: number[] = [];
+    for (const player of this.players) {
+      if (this.isWinner(player.getIndex())) winners.push(player.getIndex());
+    }
+    return winners;
+  }
+
+  /* The side of a player in a game with teams: the first player of its
+     team, or the player itself without a team. */
+  protected getSide(index: number): number {
+    for (const player of this.players) {
+      if (player.getIndex() === index || this.isAllied(player.getIndex(), index)) {
+        return player.getIndex();
+      }
+    }
+    return index;
+  }
+
+  /* A game with teams is won by the side whose enemies have all lost their
+     castles, as long as one of its own castles stands. The winning player
+     is the first player of that side. */
+  protected updateTeamWinner(): void {
+    if (this.winningPlayer >= 0) return;
+
+    for (const player of this.players) {
+      if (!player.isInGame()) continue;
+      let castleLeft = false;
+      let enemies = 0;
+      let enemiesLeft = 0;
+      for (const other of this.players) {
+        if (!other.isInGame()) continue;
+        if (other === player || this.isAllied(player.getIndex(), other.getIndex())) {
+          if (other.hasCastle() && !other.isDefeated()) castleLeft = true;
+        } else {
+          enemies += 1;
+          if (!other.isDefeated()) enemiesLeft += 1;
+        }
+      }
+      if (castleLeft && enemies > 0 && enemiesLeft === 0) {
+        this.winningPlayer = player.getIndex();
+        this.gameEndPending = true;
+        return;
+      }
+    }
+  }
+
+  // EXT: end of the block.
   getConstTick(): number {
     return this.constTick;
   }
@@ -876,6 +1028,20 @@ export class Game {
       leader = this.landLeader;
     }
 
+    // EXT: with teams the land and the military of a side count together;
+    // the leader is the first player of the leading side.
+    if (this.hasTeams()) {
+      const land: Values = new Map<number, number>();
+      const military: Values = new Map<number, number>();
+      for (const player of this.players) {
+        const side = this.getSide(player.getIndex());
+        land.set(side, u32((land.get(side) ?? 0) + u32(player.getLandArea())));
+        military.set(side, u32((military.get(side) ?? 0) + u32(player.getMilitaryScore())));
+      }
+      const landSide = this.calculateClearWinner(land);
+      leader = (landSide >= 0 && landSide === this.calculateClearWinner(military)) ? landSide : -1;
+    }
+
     if (this.winningPlayer < 0) {
       if (leader >= 0) {
         this.winningPlayer = leader;
@@ -976,6 +1142,8 @@ export class Game {
       if (this.gameType === GameGameType.GameTypeTutorial) {
         this.updateTutorial();
       } else {
+        // EXT: the castles decide a game with teams first.
+        if (this.hasTeams()) this.updateTeamWinner();
         this.updateWinner();
       }
     }
@@ -2031,7 +2199,8 @@ export class Game {
     inventory.setBuildingIndex(castle.getIndex());
     inventory.setFlagIndex(flag.getIndex());
     inventory.setOwner(player.getIndex());
-    inventory.applySuppliesPreset(player.getInitialSupplies());
+    // EXT: the stock preset of the game scales the supplies.
+    inventory.applySuppliesPreset(player.getInitialSupplies(), this.stockPreset);
 
     /* Supplies of the tutorials (Amiga game_build_castle @0x15574). */
     if (this.gameType === GameGameType.GameTypeTutorial) {
@@ -2835,6 +3004,88 @@ export class Game {
     return true;
   }
 
+  // -------------------------------------------------------------------------
+  // EXT: production controls and upgrade of military buildings (not part of
+  // Freeserf). This block is all of it in this file.
+
+  // EXT: the ticks of the current update (0 while the game is paused).
+  getTickDiff(): number {
+    return this.tickDiff;
+  }
+
+  // EXT: what the inventories of a player hold of a resource: the sum the
+  // stock panel shows. The output cap of a building reads it. The
+  // inventories are few (the castle and the storehouses), in index order.
+  getStockCount(playerIndex: number, res: ResourceType): number {
+    let count = 0;
+    for (const inventory of this.inventories) {
+      if (inventory.getOwner() === playerIndex) {
+        count += inventory.getCountOf(res);
+      }
+    }
+    return count;
+  }
+
+  // EXT: whether the player may upgrade the military building at pos in
+  // place, guard hut to tower or tower to fortress: UpgradeRefusal.None, or
+  // why not. A guard hut is a small building and a tower a large one, so a
+  // hut needs a site that would take a large building if the hut were not
+  // there: the player's own land around it and can_build_large(), which
+  // looks at the neighbours of pos, not at pos (as get_replace_site_class
+  // does for replacing a building).
+  getUpgradeRefusal(pos: MapPos, player: Player): UpgradeRefusal {
+    const map = this.map;
+    if (map.getObj(pos) !== MapObject.ObjectSmallBuilding &&
+        map.getObj(pos) !== MapObject.ObjectLargeBuilding) {
+      return UpgradeRefusal.NotOwn;
+    }
+    const building = this.buildings.get(map.getObjIndex(pos));
+    if (building == null || building.getOwner() !== player.getIndex()) {
+      return UpgradeRefusal.NotOwn;
+    }
+    if (building.isBurning()) return UpgradeRefusal.Burning;
+    if (upgradeTarget(building.getType()) === BuildingType.TypeNone) {
+      return UpgradeRefusal.WrongType;
+    }
+    if (!building.isDone()) return UpgradeRefusal.NotFinished;
+    if (building.isUpgrading()) return UpgradeRefusal.InProgress;
+    if (!building.isActive()) return UpgradeRefusal.NotOccupied;
+
+    if (constInfo()[building.getType()].mapObj !== MapObject.ObjectLargeBuilding) {
+      for (let i = 0; i < 7; i++) {
+        const p = map.posAddSpirally(pos, i);
+        if (!map.hasOwner(p) || map.getOwner(p) !== player.getIndex()) {
+          return UpgradeRefusal.NoRoom;
+        }
+      }
+      if (!this.canBuildLarge(pos)) return UpgradeRefusal.NoRoom;
+    }
+
+    return UpgradeRefusal.None;
+  }
+
+  // EXT: start the upgrade of the player's military building at pos. The
+  // building stays what it is, with its knights and its land, until the
+  // planks and stones have come and the work is done (Building::
+  // updateUpgrade). A guard hut becomes a large building on the map at
+  // once: that keeps the site free of large neighbours until the tower
+  // stands, by the rules that hold for every large building.
+  upgradeBuilding(pos: MapPos, player: Player): boolean {
+    if (this.getUpgradeRefusal(pos, player) !== UpgradeRefusal.None) {
+      return false;
+    }
+
+    const building = this.buildings.get(this.map.getObjIndex(pos))!;
+    building.startUpgrade();
+    if (this.map.getObj(pos) !== MapObject.ObjectLargeBuilding) {
+      this.map.setObject(pos, MapObject.ObjectLargeBuilding, building.getIndex());
+    }
+    return true;
+  }
+
+  // EXT: end of the block.
+  // -------------------------------------------------------------------------
+
   getPlayerSerfs(player: Player): ListSerfs {
     const playerSerfs: ListSerfs = [];
 
@@ -3065,6 +3316,13 @@ export class Game {
       pending = gameReader.value('game_end_pending').readInt();
       this.gameEndPending = (pending !== 0);
     }
+    // EXT: game options; older saves have none.
+    if (gameReader.hasValue('stock_preset')) {
+      this.setRules({
+        stockPreset: gameReader.value('stock_preset').readInt(),
+        peaceMinutes: gameReader.value('peace_minutes').readInt(),
+      });
+    }
 
     // PORT: the C++ struct is uninitialised here; every field is read below.
     const updateState = new GameMap.UpdateState();
@@ -3215,6 +3473,9 @@ export class Game {
     writer.value('inventory_schedule_counter').write(
       this.inventoryScheduleCounter);
     writer.value('game_end_pending').write(this.gameEndPending ? 1 : 0);
+    // EXT: game options.
+    writer.value('stock_preset').write(this.stockPreset);
+    writer.value('peace_minutes').write(this.peaceMinutes);
     writer.value('map.gold_morale_factor').write(this.mapGoldMoraleFactor);
     writer.value('player_score_leader').write(
       ((this.landLeader >= 0 ? BIT(this.landLeader) : 0) |

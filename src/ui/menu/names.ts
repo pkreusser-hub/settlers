@@ -73,3 +73,39 @@ export const serfBoxOrder: SerfType[] = [
   S.TypeFisher, S.TypePigFarmer, S.TypeButcher, S.TypeFarmer, S.TypeMiller, S.TypeBaker,
   S.TypeGeologist, S.TypeGeneric,
 ];
+
+// ---------------------------------------------------------------------------
+// EXT: game options and teams (game.ts), as the setup window, the
+// statistics, the attack window and the end of the game name them.
+
+/* "Team A", "Team B", or '' for a player without a team. */
+export function teamName(team: number): string {
+  return team === 1 ? 'Team A' : team === 2 ? 'Team B' : '';
+}
+
+/* How one player stands to another: "you", "ally", "enemy". Without teams
+   in the game nobody is called an enemy: '' then. */
+export function relationName(
+  game: { isAllied(a: number, b: number): boolean; hasTeams(): boolean },
+  local: number,
+  other: number,
+): string {
+  if (local === other) return 'you';
+  if (game.isAllied(local, other)) return 'ally';
+  return game.hasTeams() ? 'enemy' : '';
+}
+
+/* The stock presets by their value (STOCK_NORMAL 0, STOCK_POOR 1,
+   STOCK_RICH 2). */
+export function stockPresetName(preset: number): string {
+  return preset === 1 ? 'Poor' : preset === 2 ? 'Rich' : 'Normal';
+}
+
+/* Game ticks as "12:05" (minutes and seconds of game time: 100 ticks a
+   second), rounded up to the second. */
+export function ticksAsClock(ticks: number): string {
+  const seconds = Math.ceil(ticks / 100);
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s < 10 ? '0' : ''}${s}`;
+}

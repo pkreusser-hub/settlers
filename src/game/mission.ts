@@ -23,6 +23,7 @@
 
 import { AI } from './ai';
 import { Game, GameGameType } from './game';
+import type { GameRules } from './game';
 import { u32 } from './misc';
 import type { PlayerColor } from './player';
 import { Random } from './random';
@@ -432,6 +433,8 @@ export class PlayerInfo {
   protected name: string;
   protected characterization: string;
   protected castlePos: PlayerInfoPos;
+  // EXT: the team of the player (TEAM_NONE, TEAM_A, TEAM_B of game.ts).
+  protected team = 0;
 
   // PlayerInfo(Random *random_base)
   // PlayerInfo(character, _color, _intelligence, _supplies, _reproduction)
@@ -512,6 +515,14 @@ export class PlayerInfo {
   hasCastle(): boolean {
     return this.castlePos.col >= 0;
   }
+
+  // EXT: teams.
+  getTeam(): number {
+    return this.team;
+  }
+  setTeam(team: number): void {
+    this.team = team;
+  }
 }
 
 export class GameInfo {
@@ -521,6 +532,9 @@ export class GameInfo {
   protected name: string;
   protected gameType: number; /* Game::GameType */
   protected level: number;
+  // EXT: the game options (GameRules of game.ts). Missions and tutorials
+  // keep the defaults and no teams.
+  protected rules: GameRules = { stockPreset: 0, peaceMinutes: 0 };
 
   // PORT: `static Mission mission[]` is declared in mission.h but never
   // defined or used; the tables are the file-level `missions` and `tutorials`.
@@ -639,6 +653,20 @@ export class GameInfo {
     this.players = [];
   }
 
+  // EXT: game options.
+  getRules(): GameRules {
+    return { ...this.rules };
+  }
+  setRules(rules: GameRules): void {
+    this.rules = { ...rules };
+  }
+  /* EXT: whether this game takes options and teams: a custom game does,
+     a mission and a tutorial do not. */
+  hasExtensions(): boolean {
+    return this.gameType !== GameGameType.GameTypeMission &&
+           this.gameType !== GameGameType.GameTypeTutorial;
+  }
+
   getGameType(): number {
     return this.gameType;
   }
@@ -699,6 +727,8 @@ export class GameInfo {
       return null;
     }
     game.setGameType(this.gameType, this.level);
+    // EXT: the options before the first castle, which takes its stock by them.
+    if (this.hasExtensions()) game.setRules(this.rules);
 
     /* Initialize player and build initial castle */
     for (const playerInfo of this.players) {
@@ -707,6 +737,8 @@ export class GameInfo {
                                    playerInfo.getReproduction());
       const player = game.getPlayer(index)!;
       player.initView(playerInfo.getColor(), playerInfo.getFace());
+      // EXT: teams.
+      if (this.hasExtensions()) player.setTeam(playerInfo.getTeam());
 
       const castlePos = playerInfo.getCastlePos();
       if (castlePos.col > -1 && castlePos.row > -1) {

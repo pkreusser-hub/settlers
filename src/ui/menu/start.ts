@@ -30,6 +30,7 @@ import { openSavesPanel } from '../saves-panel';
 import { MenuWindow, registerBox } from './kit';
 import type { BoxContext, BoxView, Widget, WindowPattern, WindowSize } from './kit';
 import { installMessages } from './messages';
+import { teamName } from './names';
 import { setupPage } from './setup';
 import type { SetupHandle, SetupMode } from './setup';
 import { assetCanvas, button, el, faceCanvas, fitHeight, iconCanvas } from './widgets';
@@ -620,6 +621,15 @@ function gameEndBox(ctx: BoxContext): BoxView {
   const { win, game } = ctx;
   win.setPattern('green');
 
+  /* GAME OPTIONS: in a game with teams a team wins together. The winners
+     are named in the order of the players; a player whose castle fell wins
+     with its team. */
+  const teams = game.hasTeams();
+  const winners = game.getWinners();
+  const localWins = game.isWinner(ctx.player.getIndex());
+  const listNames = (names: string[]): string =>
+    names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+
   const type = game.getGameType();
   const winner = Math.max(0, game.getWinningPlayer());
   const winnerPlayer = game.getPlayer(winner);
@@ -646,7 +656,25 @@ function gameEndBox(ctx: BoxContext): BoxView {
       break;
     default:
       title = 'The game is over';
-      lines.push(`The ${color.toLowerCase()} settlers have gained the upper hand.`);
+      if (teams) {
+        const first = game.getPlayer(winner);
+        const team = first !== null ? teamName(first.getTeam()) : '';
+        const colors = listNames(winners.map((i) => playerColorName(i).toLowerCase()));
+        if (winners.length > 1) {
+          title = localWins ? 'Your team has won' : 'The game is over';
+          lines.push(`${team} has won. The ${colors} settlers win together.`);
+        } else {
+          title = localWins ? 'You have won' : 'The game is over';
+          lines.push(`The ${colors} settlers have won.`);
+        }
+        if (localWins && ctx.player.isDefeated()) {
+          lines.push('Your castle fell, but your team won.');
+        } else if (!localWins) {
+          lines.push('Every castle of the other side has fallen, or they lead clearly in land and knights.');
+        }
+      } else {
+        lines.push(`The ${color.toLowerCase()} settlers have gained the upper hand.`);
+      }
       break;
   }
   win.setTitle(title);
@@ -654,7 +682,8 @@ function gameEndBox(ctx: BoxContext): BoxView {
   const pictures = el('div', 'so-end-pictures');
   /* No result picture in a demo game (PopupBox.show). */
   if (type !== GameGameType.GameTypeDemo) {
-    const result = assetCanvas(Asset.ArtBox, resultPicture(type, winner));
+    /* GAME OPTIONS: with teams the picture is the local player's result. */
+    const result = assetCanvas(Asset.ArtBox, teams ? (localWins ? 0 : 2) : resultPicture(type, winner));
     if (result.width > 1) pictures.append(result);
   }
   const mission = missionPicture(type, winner, game.getMissionLevel());
@@ -665,12 +694,25 @@ function gameEndBox(ctx: BoxContext): BoxView {
   if (pictures.childElementCount > 0) win.add(pictures);
 
   const result = el('div', 'so-end-result');
-  if (winnerPlayer !== null) {
-    result.append(faceCanvas(winnerPlayer.getFace(), winnerPlayer.getColor()));
-  }
   const words = el('div', 'so-end-words');
-  const who = winnerPlayer !== null ? characterName(winnerPlayer.getFace()) : '';
-  words.append(el('p', 'so-end-winner', `Winner: ${color}${who !== '' ? `, ${who}` : ''}`));
+  if (teams && winners.length > 1) {
+    /* GAME OPTIONS: the faces and names of everyone who won together. */
+    const names: string[] = [];
+    for (const index of winners) {
+      const p = game.getPlayer(index);
+      if (p === null) continue;
+      result.append(faceCanvas(p.getFace(), p.getColor()));
+      const who = characterName(p.getFace());
+      names.push(`${playerColorName(index)}${who !== '' ? ` (${who})` : ''}`);
+    }
+    words.append(el('p', 'so-end-winner', `Winners: ${listNames(names)}`));
+  } else {
+    if (winnerPlayer !== null) {
+      result.append(faceCanvas(winnerPlayer.getFace(), winnerPlayer.getColor()));
+    }
+    const who = winnerPlayer !== null ? characterName(winnerPlayer.getFace()) : '';
+    words.append(el('p', 'so-end-winner', `Winner: ${color}${who !== '' ? `, ${who}` : ''}`));
+  }
   for (const line of lines) words.append(el('p', 'so-end-line', line));
   result.append(words);
   win.add(result);

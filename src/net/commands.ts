@@ -11,6 +11,13 @@
 // Importing this module registers the handlers (main.ts imports it).
 
 import { BuildingType } from '../game/building';
+// EXT: for the building controls block at the end of this file.
+import {
+  isProductionBuilding,
+  productionCapSteps,
+  productionOutput,
+  UpgradeRefusal,
+} from '../game/building';
 import type { Building } from '../game/building';
 import type { Game } from '../game/game';
 import { MapObject, Road } from '../game/map';
@@ -171,9 +178,40 @@ export function canPromoteSerfsToKnights(game: Game, player: Player): boolean {
   return false;
 }
 
+// EXT (game options and teams): the rules that forbid an attack.
+
+/* Why the rules of the game forbid the player an attack on the building at
+   pos: it is an ally's, or the peace timer runs. '' when they allow it. */
+export type AttackRefusal = '' | 'ally' | 'peace';
+
+export function attackRefusal(game: Game, pos: MapPos, player: Player): AttackRefusal {
+  const building = game.getBuildingAtPos(pos);
+  if (building !== null && game.isAllied(player.getIndex(), building.getOwner())) return 'ally';
+  if (game.isPeace()) return 'peace';
+  return '';
+}
+
+/* Whether the attack window has something to say about the building at
+   pos: a building the player could attack by the checks of the original,
+   or a finished military building of an ally (which never is one). */
+export function isAttackBoxTarget(game: Game, pos: MapPos, player: Player): boolean {
+  if (isAttackTarget(game, pos, player)) return true;
+  const building = game.getBuildingAtPos(pos);
+  return building !== null && !building.isBurning() && building.isDone() &&
+    building.isMilitary() && game.isAllied(player.getIndex(), building.getOwner());
+}
+
 /* Whether the player may attack the building at pos: the checks of the
-   click on a foreign building in the viewport. */
+   click on a foreign building in the viewport, and the rules above. The
+   startAttack command asks here when it runs. */
 export function canAttack(game: Game, pos: MapPos, player: Player): boolean {
+  return isAttackTarget(game, pos, player) && attackRefusal(game, pos, player) === '';
+}
+
+// EXT: end of the block.
+
+/* The checks of the click on a foreign building in the viewport. */
+function isAttackTarget(game: Game, pos: MapPos, player: Player): boolean {
   const map = game.getMap();
   const building = game.getBuildingAtPos(pos);
   if (building === null || building.isBurning()) return false;
@@ -745,3 +783,77 @@ register('speedReset', (game) => {
 export function cmdSpeedReset(game: Game): void {
   issue(game, { type: 'speedReset' });
 }
+
+// ---------------------------------------------------------------------------
+// EXT: building controls (not part of Freeserf): pause and output cap of a
+// production building, upgrade of a guard hut or tower in place. This block
+// is all of it in this file.
+
+/* The player's own finished building at pos whose production can be paused
+   (isProductionBuilding of building.ts), or null. */
+function ownProductionBuildingAt(game: Game, player: Player, pos: MapPos): Building | null {
+  const building = ownBuildingAt(game, player, pos);
+  if (building === null || !building.isDone()) return null;
+  if (!isProductionBuilding(building.getType())) return null;
+  return building;
+}
+
+/* Whether the player may pause the building at pos. */
+export function canPauseBuilding(game: Game, pos: MapPos, player: Player): boolean {
+  return ownProductionBuildingAt(game, player, pos) !== null;
+}
+
+/* Whether the building at pos takes an output cap: a production building
+   with one output (not the forester, the toolmaker or the weaponsmith). */
+export function canCapBuilding(game: Game, pos: MapPos, player: Player): boolean {
+  const building = ownProductionBuildingAt(game, player, pos);
+  return building !== null && productionOutput(building.getType()) !== ResourceType.TypeNone;
+}
+
+/* Why the player may not upgrade the building at pos, or
+   UpgradeRefusal.None (Game::getUpgradeRefusal). */
+export function upgradeRefusal(game: Game, pos: MapPos, player: Player): UpgradeRefusal {
+  return game.getUpgradeRefusal(pos, player);
+}
+
+/* setBuildingPaused { pos, paused }: pause or resume the player's own
+   production building at pos. Explicit, not a toggle. */
+register('setBuildingPaused', (game, player, cmd) => {
+  if (!isPos(game, cmd.pos) || typeof cmd.paused !== 'boolean') return;
+  const building = ownProductionBuildingAt(game, player, cmd.pos);
+  if (building === null) return;
+  building.setProductionPaused(cmd.paused);
+});
+
+export function cmdSetBuildingPaused(game: Game, pos: MapPos, paused: boolean): void {
+  issue(game, { type: 'setBuildingPaused', pos, paused });
+}
+
+/* setBuildingCap { pos, cap }: the player's own production building at pos
+   starts no new work while his inventories hold cap or more of its output.
+   cap is one of productionCapSteps (0 is off). */
+register('setBuildingCap', (game, player, cmd) => {
+  if (!isPos(game, cmd.pos) || !isInt(cmd.cap, 0, 0xffff)) return;
+  if (!productionCapSteps.includes(cmd.cap)) return;
+  if (!canCapBuilding(game, cmd.pos, player)) return;
+  const building = ownProductionBuildingAt(game, player, cmd.pos)!;
+  building.setProductionCap(cmd.cap);
+});
+
+export function cmdSetBuildingCap(game: Game, pos: MapPos, cap: number): void {
+  issue(game, { type: 'setBuildingCap', pos, cap });
+}
+
+/* upgradeBuilding { pos }: upgrade the player's own guard hut or tower at
+   pos in place (Game::upgradeBuilding checks everything again). */
+register('upgradeBuilding', (game, player, cmd) => {
+  if (!isPos(game, cmd.pos)) return;
+  game.upgradeBuilding(cmd.pos, player);
+});
+
+export function cmdUpgradeBuilding(game: Game, pos: MapPos): void {
+  issue(game, { type: 'upgradeBuilding', pos });
+}
+
+// EXT: end of the building controls block.
+// ---------------------------------------------------------------------------

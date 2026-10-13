@@ -9,7 +9,17 @@
 // GameManager.startGame(), and online OnlineHostHooks.start() and
 // startSaved(). Change the two together.
 
-import { Game, GAME_MAX_PLAYER_COUNT } from '../../game/game';
+import {
+  Game,
+  GAME_MAX_PLAYER_COUNT,
+  PEACE_MINUTES_CHOICES,
+  STOCK_NORMAL,
+  STOCK_POOR,
+  STOCK_RICH,
+  TEAM_A,
+  TEAM_B,
+  TEAM_NONE,
+} from '../../game/game';
 import { GameManager } from '../../game/game-manager';
 import { Map as GameMap, MapGeometry } from '../../game/map';
 import {
@@ -27,6 +37,7 @@ import type { Interface } from '../interface';
 import { Minimap } from '../minimap';
 import { PopupBoxType } from '../popup';
 import type { MenuWindow, Widget, WindowTab } from './kit';
+import { stockPresetName, teamName } from './names';
 import {
   characterName,
   listBox,
@@ -37,7 +48,7 @@ import {
   tutorialOrders,
 } from './start';
 import type { StartPage } from './start';
-import { button, el, faceCanvas, hint, meter, section, slider, stepper } from './widgets';
+import { button, el, faceCanvas, hint, meter, section, segmented, slider, stepper } from './widgets';
 
 /* What the window sets up: the game types of the canvas box. 'saved' is its
    load type, which the window only has for the host of an online game (a
@@ -48,8 +59,14 @@ export type SetupMode = 'custom' | 'mission' | 'tutorial' | 'saved';
    starting stock presets, a peace timer, victory rules. A new option gets a
    field here, a widget in gameOptionsSection() and its way into the game in
    SetupModel.start(). What belongs to one player (team, alliance) goes in
-   slotOptions(). Nothing yet. */
-export interface GameOptions {}
+   slotOptions() and is kept in the PlayerInfo of the place. The fields are
+   the GameRules of game.ts. */
+export interface GameOptions {
+  /* STOCK_NORMAL, STOCK_POOR or STOCK_RICH. */
+  stockPreset: number;
+  /* One of PEACE_MINUTES_CHOICES; 0 is no peace. */
+  peaceMinutes: number;
+}
 
 const MAP_SIZE_MIN = 3;
 const MAP_SIZE_MAX = 10;
@@ -66,7 +83,7 @@ export class SetupModel {
   seedText: string;
   /* The saved game of the 'saved' mode. */
   savedPath = '';
-  readonly options: GameOptions = {};
+  readonly options: GameOptions = { stockPreset: STOCK_NORMAL, peaceMinutes: 0 };
 
   constructor(readonly online: OnlineHostHooks | null) {
     /* The constructor of GameInitBox. */
@@ -156,6 +173,7 @@ export class SetupModel {
       this.customMission.setDefaultColors();
     }
     this.mission = this.customMission;
+    this.onTeamsChange?.();
     return true;
   }
 
@@ -206,6 +224,7 @@ export class SetupModel {
     this.mission.setDefaultColors();
     const index = this.mission.getPlayerCount() - 1;
     this.mission.getPlayer(index).setCharacter(this.nextFace(index));
+    this.onTeamsChange?.();
     return true;
   }
 
@@ -219,11 +238,50 @@ export class SetupModel {
     if (!this.canRemovePlayer(index)) return false;
     this.mission.removePlayer(index);
     this.mission.setDefaultColors();
+    this.onTeamsChange?.();
     return true;
+  }
+
+  /* The team of a place, in a custom game. */
+  setTeam(index: number, team: number): boolean {
+    if (this.mode !== 'custom' || index >= this.mission.getPlayerCount()) return false;
+    this.mission.getPlayer(index).setTeam(team);
+    this.onTeamsChange?.();
+    return true;
+  }
+
+  /* Told when a team or the players change: the summary of the teams in
+     the game options. */
+  onTeamsChange: (() => void) | null = null;
+
+  /* The places by team, for the summary: [no team, team A, team B]. */
+  teams(): number[][] {
+    const teams: number[][] = [[], [], []];
+    for (let i = 0; i < this.mission.getPlayerCount(); i++) {
+      teams[this.mission.getPlayer(i).getTeam()]?.push(i);
+    }
+    return teams;
+  }
+
+  /* Why the teams as they are make no game, or ''. */
+  teamProblem(): string {
+    if (this.mode !== 'custom') return '';
+    const [, a, b] = this.teams();
+    const count = this.mission.getPlayerCount();
+    if (count > 1 && (a.length === count || b.length === count)) {
+      return 'All players are in one team. Put at least one player in another team or in no team.';
+    }
+    return '';
   }
 
   /* ActionStartGame. */
   start(iface: Interface): boolean {
+    /* GAME OPTIONS: a custom game takes them, a mission and a tutorial keep
+       the defaults. A saved game has its own. */
+    if (this.mode === 'custom') {
+      if (this.teamProblem() !== '') return false;
+      this.mission.setRules({ ...this.options });
+    }
     if (this.online !== null) {
       if (this.mode === 'saved') {
         if (this.savedPath.length === 0 || !this.online.startSaved(this.savedPath)) return false;
@@ -436,14 +494,104 @@ export interface SetupHandle {
 
 /* GAME OPTIONS of the whole game: see GameOptions. Shown under the players
    of a custom and an online game. */
-function gameOptionsSection(_model: SetupModel): Widget {
-  return section('Game options', hint('Nothing to set yet.'));
+function gameOptionsSection(model: SetupModel): Widget {
+  const options = model.options;
+
+  /* Inventory.applySuppliesPreset(). */
+  const stockHelp = [
+    'Normal: each castle starts with what the supplies of its player give.',
+    'Poor: each castle starts with half of that, but never less than supplies 0 give ' +
+      '(7 planks, 2 stones).',
+    'Rich: each castle starts with one and a half times that.',
+  ];
+  const stockText = hint('');
+  const stock = segmented<number>({
+    label: 'Starting stock',
+    options: [STOCK_POOR, STOCK_NORMAL, STOCK_RICH].map((value) => ({
+      value,
+      label: stockPresetName(value),
+    })),
+    get: () => options.stockPreset,
+    set: (value) => {
+      options.stockPreset = value;
+      update();
+    },
+  });
+
+  /* Game.isPeace(). */
+  const peaceText = hint('');
+  const peace = segmented<number>({
+    label: 'Peace at the start',
+    options: PEACE_MINUTES_CHOICES.map((value) => ({
+      value,
+      label: value === 0 ? 'Off' : `${value} minutes`,
+    })),
+    get: () => options.peaceMinutes,
+    set: (value) => {
+      options.peaceMinutes = value;
+      update();
+    },
+  });
+
+  /* Game.updateTeamWinner() and Game.updateWinner(). */
+  const teamText = hint('');
+  const problem = el('p', 'su-team-problem');
+  problem.setAttribute('role', 'status');
+
+  const names = (places: number[]): string => places.map((i) => playerColorName(i)).join(', ');
+  let shown = '';
+  /* A function declaration: the controls above call it. */
+  function update(): void {
+    stock.update?.();
+    peace.update?.();
+    const [none, a, b] = model.teams();
+    const key = `${options.stockPreset}|${options.peaceMinutes}|${none}|${a}|${b}`;
+    if (key === shown) return;
+    shown = key;
+    stockText.textContent = stockHelp[options.stockPreset] ?? '';
+    peaceText.textContent = options.peaceMinutes === 0
+      ? 'Attacks are allowed from the start.'
+      : `Nobody can attack in the first ${options.peaceMinutes} minutes of game time. ` +
+        'At a higher game speed they pass faster.';
+    if (a.length === 0 && b.length === 0) {
+      teamText.textContent = 'No teams: everyone plays alone. Set a team at each player above.';
+    } else {
+      const parts: string[] = [];
+      if (a.length > 0) parts.push(`${teamName(TEAM_A)}: ${names(a)}.`);
+      if (b.length > 0) parts.push(`${teamName(TEAM_B)}: ${names(b)}.`);
+      if (none.length > 0) parts.push(`No team: ${names(none)}.`);
+      teamText.textContent = `${parts.join(' ')} Allies cannot attack each other. A team wins ` +
+        'together when every other player has lost the castle, or when the team leads ' +
+        'clearly in land and knights.';
+    }
+    problem.textContent = model.teamProblem();
+    problem.hidden = problem.textContent === '';
+  }
+  update();
+  model.onTeamsChange = update;
+
+  const root = section('Game options', stock, stockText, peace, peaceText,
+    el('div', 'mk-label su-team-title', 'Teams'), teamText, problem);
+  return { el: root.el, update };
 }
 
 /* GAME OPTIONS of one player (team, alliance): rows at the end of the
-   player's place. See GameOptions. */
-function slotOptions(_model: SetupModel, _index: number): (Widget | HTMLElement)[] {
-  return [];
+   player's place. See GameOptions. Only a custom game has teams. */
+function slotOptions(model: SetupModel, index: number): (Widget | HTMLElement)[] {
+  if (model.mode !== 'custom' || index >= model.mission.getPlayerCount()) return [];
+  const info = model.mission.getPlayer(index);
+  const team = segmented<number>({
+    label: 'Team',
+    options: [
+      { value: TEAM_NONE, label: 'No team', title: 'Plays alone' },
+      { value: TEAM_A, label: 'A', title: teamName(TEAM_A) },
+      { value: TEAM_B, label: 'B', title: teamName(TEAM_B) },
+    ],
+    get: () => info.getTeam(),
+    set: (value) => { model.setTeam(index, value); },
+  });
+  team.el.classList.add('su-team');
+  return [team];
 }
 
 export function setupPage(options: SetupOptions): { page: StartPage; handle: SetupHandle } {
@@ -486,9 +634,13 @@ export function setupPage(options: SetupOptions): { page: StartPage; handle: Set
     const start = (): void => {
       error.textContent = '';
       if (!model.start(iface) && error.textContent === '') {
-        error.textContent = model.mode === 'saved' && model.savedPath.length === 0
-          ? 'Choose a saved game first.'
-          : 'The game could not be started.';
+        if (model.teamProblem() !== '') {
+          error.textContent = model.teamProblem();
+        } else {
+          error.textContent = model.mode === 'saved' && model.savedPath.length === 0
+            ? 'Choose a saved game first.'
+            : 'The game could not be started.';
+        }
       }
     };
 

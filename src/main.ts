@@ -123,6 +123,20 @@ async function main(): Promise<boolean> {
 
   /* Settings of the last run; -f asks for fullscreen in any case. */
   iface.applySettings();
+
+  // Dev only: `localStorage['settlers.devMute'] = '1'` keeps test tabs silent.
+  if (import.meta.env.DEV) {
+    let mute = false;
+    try {
+      mute = localStorage.getItem('settlers.devMute') === '1';
+    } catch {
+      // No storage: not muted.
+    }
+    if (mute) {
+      audio.getMusicPlayer()?.enable(false);
+      audio.getSoundPlayer()?.enable(false);
+    }
+  }
   // PORT: no -f option and no "fullscreen" setting: gfx.set_fullscreen(true)
   // is never called here.
 

@@ -35,6 +35,12 @@ interface Hashable {
     getProgress(): number;
     getOwner(): number;
     isDone(): boolean;
+    // EXT: building controls (pause, output cap, upgrade in place).
+    extPaused: boolean;
+    extCap: number;
+    upgradeTo: number;
+    upgradeTimer: number;
+    stock: { type: number; available: number; requested: number; maximum: number }[];
   }>;
   serfs: Iterable<{
     getIndex(): number;
@@ -99,6 +105,18 @@ export function stateHash(game: Game): number {
     mix(b.getProgress());
     mix(b.getOwner());
     mix(b.isDone() ? 1 : 0);
+    // EXT: building controls. Mixed in only when one is in use, so that a
+    // game without them hashes as before.
+    if (b.extPaused || b.extCap !== 0 || b.upgradeTo !== 0) {
+      mix(b.extPaused ? 1 : 0);
+      mix(b.extCap);
+      mix(b.upgradeTo);
+      mix(b.upgradeTimer);
+      mix(b.stock[2].type);
+      mix(b.stock[2].available);
+      mix(b.stock[2].requested);
+      mix(b.stock[2].maximum);
+    }
   }
 
   for (const f of g.flags) {
@@ -112,6 +130,23 @@ export function stateHash(game: Game): number {
     mix(inv.getOwner());
     for (let r = 0; r < RESOURCE_TYPES; r++) mix(inv.getCountOf(r as ResourceType));
   }
+
+  // EXT (game options and teams): mixed in only when one is set, so that a
+  // game without them has the hash it had before.
+  {
+    const rules = game.getRules();
+    if (rules.stockPreset !== 0 || rules.peaceMinutes !== 0 || game.hasTeams()) {
+      mix(0x45585431); /* 'EXT1' */
+      mix(rules.stockPreset);
+      mix(rules.peaceMinutes);
+      for (let i = 0; i < 4; i++) {
+        const player = game.getPlayer(i);
+        mix(player === null ? -1 : player.getTeam());
+      }
+      mix(game.getWinningPlayer());
+    }
+  }
+  // EXT: end of the block.
 
   return h >>> 0;
 }

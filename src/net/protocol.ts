@@ -6,7 +6,7 @@ import type { Command } from './command';
 
 // Bumped whenever the messages, the lockstep constants or the simulation
 // change in a way that two different builds could not play together.
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 // Most human players of a game (the game has four players).
 export const MAX_HUMANS = 4;
@@ -52,6 +52,8 @@ export interface NetPlayer {
   reproduction: number;
   // Castle position, col -1 when the player places the castle.
   castle: { col: number; row: number };
+  // EXT: the team, 0 none, 1 A, 2 B (TEAM_* of game.ts).
+  team: number;
 }
 
 // Everything needed to build the identical game on all sides.
@@ -67,6 +69,8 @@ export interface GameSetup {
   // players.
   humans: number;
   players: NetPlayer[];
+  // EXT: the game options (GameRules of game.ts).
+  rules: { stockPreset: number; peaceMinutes: number };
 }
 
 // Why the host does not take a guest.

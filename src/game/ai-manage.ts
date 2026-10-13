@@ -516,6 +516,10 @@ export function validateLocationsEnd(player: Player, first: number, count: numbe
         MAP_SPACE(pos) < 4) {
       loc.value = 0;
     }
+    // EXT: nor a building of an ally.
+    if (loc.value !== 0 && AI_GAME().isAllied(PLAYER_NUM(player), MAP_OWNER(pos))) {
+      loc.value = 0;
+    }
   }
 }
 
@@ -548,6 +552,8 @@ export function calcMilitaryRatio(player: Player): number {
   for (let i = 0; i < GAME_MAX_PLAYER_COUNT; i++) {
     const p = AI_GAME().getPlayer(i);
     if (p == null || p === player) continue;
+    // EXT: the strength of an ally does not count against the player.
+    if (AI_GAME().isAllied(PLAYER_NUM(player), i)) continue;
     other = u32(other + p.totalMilitaryScore);
   }
 
@@ -577,6 +583,13 @@ const attackFactor: number[] = [
 
 /* 0x29de2: decide whether to attack; otherwise scan for sites. */
 export function attack(player: Player): void {
+  // EXT: no attack during the peace; the turn goes to the site scan, as it
+  // does when the player decides against an attack.
+  if (AI_GAME().isPeace()) {
+    Core.scanSites(player);
+    return;
+  }
+
   const ratio = player.ai.militaryRatio & 0xffff;
 
   if (ratio < 0x8000) {
@@ -747,6 +760,8 @@ export function attack(player: Player): void {
         MAP_OWNER(pos) === u32(PLAYER_NUM(player))) {
       continue;
     }
+    // EXT: never a building of an ally.
+    if (AI_GAME().isAllied(PLAYER_NUM(player), MAP_OWNER(pos))) continue;
     const obj = MAP_OBJ(pos);
     if (obj < MapObject.ObjectSmallBuilding || obj > MapObject.ObjectCastle) continue;
 

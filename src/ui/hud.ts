@@ -9,6 +9,7 @@ import { GameStore } from '../game/savegame';
 import { cmdSetPaused, cmdSetSpeed } from '../net/commands';
 import { EventLoop, EventLoopDOM } from './event-loop';
 import type { Interface } from './interface';
+import { ticksAsClock } from './menu/names';
 import { openSavesPanel } from './saves-panel';
 import { ViewportLayer } from './viewport';
 
@@ -24,6 +25,10 @@ export class Hud {
   protected saveButton: HTMLButtonElement;
   protected loadButton: HTMLButtonElement;
   protected savedUntil = 0;
+  /* GAME OPTIONS: the time left of the peace timer; hidden without one. */
+  protected peaceGroup: HTMLElement;
+  protected peaceText: HTMLElement;
+  protected peaceShown = '';
 
   constructor(protected gameManager: GameManager, protected iface: Interface) {
     this.root = document.createElement('div');
@@ -43,6 +48,13 @@ export class Hud {
       if (game) cmdSetPaused(game, !game.isPaused());
     });
     speed.append(this.pauseButton);
+
+    this.peaceGroup = this.group('Peace');
+    this.peaceGroup.title = 'Nobody can attack until the peace timer of this game ends';
+    this.peaceText = document.createElement('span');
+    this.peaceText.className = 'hud-value';
+    this.peaceGroup.append(this.peaceText);
+    this.peaceGroup.hidden = true;
 
     const file = this.group('Game');
     this.saveButton = this.button('Save', 'Save the game in this browser, under the date and time', () => {
@@ -133,6 +145,12 @@ export class Hud {
     this.pauseButton.setAttribute('aria-pressed', String(paused));
     this.pauseButton.textContent = paused ? 'Paused' : 'Pause';
     this.saveButton.textContent = Date.now() < this.savedUntil ? 'Saved' : 'Save';
+    const peace = game && game.isPeace() ? ticksAsClock(game.getPeaceTicksLeft()) : '';
+    if (peace !== this.peaceShown) {
+      this.peaceShown = peace;
+      this.peaceText.textContent = peace === '' ? '' : `${peace} left`;
+      this.peaceGroup.hidden = peace === '';
+    }
     const viewport = this.iface.getViewport();
     this.spotsButton.disabled = viewport === null;
     this.spotsButton.setAttribute(

@@ -1086,6 +1086,51 @@ function main(): void {
     compare(match);
   }
 
+  // -------------------------------------------------------------------------
+  // EXT (game options and teams): they are part of the setup the host sends.
+  print('\n17. game options and teams in the setup: two people and two computer players in two teams');
+  {
+    const setup = makeTestSetup(2, 4, '8667715887436237', '3183215728814883');
+    check(setup.rules.stockPreset === 0 && setup.rules.peaceMinutes === 0 && setup.players.every((p) => p.team === 0),
+      'a setup made without options has the defaults and no teams');
+    setup.rules = { stockPreset: 1, peaceMinutes: 10 };
+    [1, 2, 1, 2].forEach((team, i) => { setup.players[i].team = team; });
+    const wire = JSON.parse(JSON.stringify(setup)) as GameSetup;
+    check(isValidSetup(wire), 'the setup with options and teams is valid after JSON');
+    const bad = (change: (s: GameSetup) => void): boolean => {
+      const copy = JSON.parse(JSON.stringify(setup)) as GameSetup;
+      change(copy);
+      return !isValidSetup(copy);
+    };
+    check(bad((c) => { c.players[1].team = 3; }) && bad((c) => { c.players[0].team = -1; }) &&
+      bad((c) => { c.players[2].team = 1.5; }) &&
+      bad((c) => { delete (c.players[3] as unknown as { team?: number }).team; }),
+      'a team that does not exist, or none at all, is refused');
+    check(bad((c) => { c.rules.stockPreset = 3; }) && bad((c) => { c.rules.peaceMinutes = 15; }) &&
+      bad((c) => { c.rules.peaceMinutes = -10; }) &&
+      bad((c) => { (c as unknown as { rules: unknown }).rules = null; }) &&
+      bad((c) => { delete (c as unknown as { rules?: unknown }).rules; }),
+      'options that do not exist, or none at all, are refused');
+
+    const match = new Match(SEED + 3, setup);
+    const same = match.sides.every((side) => {
+      const g = side.game;
+      return g.getRules().stockPreset === 1 && g.getRules().peaceMinutes === 10 &&
+        [1, 2, 1, 2].every((team, i) => g.getPlayer(i)!.getTeam() === team) &&
+        g.isAllied(0, 2) && g.isAllied(1, 3) && !g.isAllied(0, 1);
+    });
+    check(same, 'the host and the guest built the game with the options and the teams');
+    const plain = new NetGameInfo(makeTestSetup(2, 4, '8667715887436237', '3183215728814883')).instantiate()!;
+    check(stateHash(match.host.game) !== stateHash(plain), 'the options and teams are in the state hash');
+    check(stateHash(match.sides[0].game) === stateHash(match.sides[1].game), 'both games start with the same hash');
+    match.start();
+    match.runTurns(600);
+    check(allRunning(match.sides) && noneSaw(match.sides, 'desync'), 'running without desync');
+    check(match.sides.every((side) => side.game.isPeace()), 'the peace timer runs in both games');
+    compare(match);
+    for (const side of match.sides) side.session.stop();
+  }
+
   print(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`);
   process.exit(failures === 0 ? 0 : 1);
 }

@@ -294,6 +294,9 @@ export class Player extends GameObject {
   totalAttackingKnights: number;
   tempIndex: number;
 
+  // EXT: the team, 0 none (saved as "team").
+  team = 0;
+
   constructor(game: Game, index: number) {
     super(game, index);
     for (let i = 0; i < 16; i++) {
@@ -544,6 +547,20 @@ export class Player extends GameObject {
   // over in an online game.
   setHuman(): void {
     this.computer = false;
+  }
+
+  // EXT: the team of the player (TEAM_NONE, TEAM_A, TEAM_B of game.ts),
+  // fixed when the game is made.
+  getTeam(): number {
+    return this.team;
+  }
+  setTeam(team: number): void {
+    this.team = (team === 1 || team === 2) ? team : 0;
+  }
+  /* EXT: a player whose castle was built and is gone has lost a game with
+     teams. */
+  isDefeated(): boolean {
+    return this.castle && !this.castleStanding;
   }
 
   isEmergencyActive(): boolean {
@@ -923,6 +940,11 @@ export class Player extends GameObject {
 
     const target: Building = this.game.getBuilding(this.buildingAttacked)!;
     if (!target.isDone() || !target.isMilitary() || !target.isActive() || target.getThreatLevel() !== 3) {
+      return;
+    }
+    // EXT: no attack during the peace and none on an ally. Every attack of
+    // a person or a computer player starts here.
+    if (!this.game.mayAttack(this.index, target.getOwner())) {
       return;
     }
 
@@ -2000,6 +2022,10 @@ export class Player extends GameObject {
       this.goldDeposited = reader.value('gold_deposited').readInt();
       this.militaryMaxGold = reader.value('military_max_gold').readInt();
     }
+    // EXT: teams; older saves have none.
+    if (reader.hasValue('team')) {
+      this.setTeam(reader.value('team').readInt());
+    }
     if (reader.hasValue('timers')) {
       const timers = reader.value('timers');
       const timersSize = timers.size();
@@ -2153,6 +2179,8 @@ export class Player extends GameObject {
     writer.value('knight_morale').write(this.knightMorale);
     writer.value('gold_deposited').write(this.goldDeposited);
     writer.value('military_max_gold').write(this.militaryMaxGold);
+    // EXT: teams.
+    writer.value('team').write(this.team);
 
     /* The timers and messages of the player, as pairs or triples. */
     for (const timer of this.timers) {

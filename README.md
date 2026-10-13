@@ -83,6 +83,24 @@ food for the mines (settings) and production over time (statistics). Drag a
 window by its title bar; Esc closes it. Boxes that are not rebuilt yet open as
 before.
 
+## Rules added by this port
+
+None of these change a game that does not use them.
+
+- Starting stock: Poor, Normal or Rich, chosen in the game setup.
+- Peace: nobody can attack for the first 10, 20, 30 or 60 minutes. The top bar
+  shows the time left.
+- Teams: the host puts players in team A or B in the setup. Allies cannot
+  attack each other, computer players included, and a team wins together.
+- Pause a building: its worker stays in but makes nothing.
+- Output cap: a building stops when the stock of what it makes reaches the
+  number you set, and starts again when the stock falls.
+- Upgrade: a guard hut becomes a tower and a tower a fortress, in place. It
+  keeps its knights and its land while planks and stones arrive. A hut needs
+  room for a large building. A building that the enemy takes loses its upgrade.
+
+Pause, cap and upgrade are in the window of the building.
+
 ## Save and load
 
 Save in the top bar stores the game in this browser under the date and time;

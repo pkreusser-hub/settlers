@@ -2774,6 +2774,24 @@ export class Viewport extends GuiObject implements MapHandler {
         attack.buildingAttacked = building.getIndex();
         attack.pos = building.getPosition();
 
+        // EXT: a military building of an ally cannot be attacked. In a
+        // game with the menus of the page the attack window opens to say
+        // so; it sends no knights.
+        if (building.isDone() && building.isMilitary() &&
+            this.interface.getGame()!.isAllied(player.getIndex(), building.getOwner())) {
+          if (this.interface.popupHook === null) {
+            this.playSound(AudioTypeSfx.TypeSfxNotAccepted);
+            return false;
+          }
+          this.playSound(AudioTypeSfx.TypeSfxClick);
+          attack.attackingKnights = [0, 0, 0, 0];
+          attack.totalAttackingKnights = 0;
+          attack.attackingBuildingCount = 0;
+          attack.knightsAttacking = 0;
+          this.interface.openPopup(PopupBoxType.TypeStartAttack);
+          return false;
+        }
+
         if (building.isDone() &&
             building.isMilitary()) {
           if (!building.isActive() ||

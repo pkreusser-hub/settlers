@@ -6,7 +6,7 @@
 
 import './build-menu.css';
 
-import { BuildingType } from '../game/building';
+import { BuildingType, ProductionHold } from '../game/building';
 import type { Building } from '../game/building';
 import type { Game } from '../game/game';
 import type { GameManager } from '../game/game-manager';
@@ -221,6 +221,15 @@ export class Alerts {
 
       if (type === BuildingType.TypeCastle) continue;
 
+      /* A building the player paused is listed as that, at once. A paused
+         building, or one that waits because its output cap is reached
+         (Building.getProductionHold), asks for no input: it is not said
+         to have none. */
+      const hold = building.getProductionHold();
+      if (hold === ProductionHold.Paused) {
+        alerts.push({ key: `paused:${index}`, text: `${name} is paused`, pos, res: null, type });
+      }
+
       if (!building.hasSerf()) {
         /* `holder` is set when the requested serf arrives
            (Building::requested_serf_reached). */
@@ -235,6 +244,7 @@ export class Alerts {
 
       /* The storehouse has no stock of its own (0xff marks an inventory). */
       if (type === BuildingType.TypeStock) continue;
+      if (hold !== ProductionHold.None) continue;
 
       /* The input stocks, as the worker set them when he walked in
          (stockInit in serf.ts): empty means the work stands still. */

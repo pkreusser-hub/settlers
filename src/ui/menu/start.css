@@ -505,3 +505,27 @@ body.so-open > .mk-win {
     font-size: 1.8em;
   }
 }
+
+/* ---- Game options and teams of the setup, team lines of the end ---- */
+
+.su-team .mk-seg-label {
+  font-size: 0.9em;
+}
+
+.su-team-title {
+  margin-top: 0.4em;
+}
+
+.su-team-problem {
+  margin: 0.2em 0 0;
+  color: var(--gx-bad);
+}
+
+.su-team-problem::before {
+  content: 'Problem: ';
+  font-weight: 600;
+}
+
+.so-end-team {
+  margin: 0.2em 0 0;
+}

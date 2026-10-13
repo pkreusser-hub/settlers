@@ -1,0 +1,59 @@
+#hud {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  font: 13px/1 system-ui, sans-serif;
+  user-select: none;
+}
+
+#hud .hud-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: rgba(24, 28, 18, 0.82);
+  border: 1px solid #55603c;
+  border-radius: 6px;
+}
+
+#hud .hud-label {
+  padding: 0 6px 0 5px;
+  color: #c9c3a4;
+}
+
+#hud button {
+  min-width: 34px;
+  height: 30px;
+  padding: 0 8px;
+  color: #ece6c8;
+  background: #3b4628;
+  border: 1px solid #55603c;
+  border-radius: 4px;
+  font: inherit;
+  cursor: pointer;
+}
+
+#hud button:hover {
+  background: #4a5733;
+}
+
+#hud button:focus-visible {
+  outline: 2px solid #e2c770;
+  outline-offset: 1px;
+}
+
+#hud button[aria-pressed='true'] {
+  color: #1b1d12;
+  background: #e2c770;
+  border-color: #e2c770;
+}
+
+#hud button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

@@ -1,0 +1,12 @@
+node_modules/
+dist/
+ref/
+# Original game files are copyrighted; keep them out of the repo.
+public/data/
+settlers/
+bundle/
+web/*.jsdos
+web/manual.pdf
+# Font and button image redrawn from the original game's art (from Freeserf's
+# resources folder). Optional: without them the game uses the data file's font.
+public/resources/

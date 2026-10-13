@@ -1,0 +1,214 @@
+/* Page overlays outside the game canvas: the lobby, the data file screen and
+   the status line of an online game. */
+
+.ov-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+  overflow: auto;
+  background: rgba(8, 10, 6, 0.82);
+  font: 16px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: #e6e0cf;
+}
+
+.ov-backdrop[hidden],
+.ov-hud[hidden] {
+  display: none;
+}
+
+.ov-panel {
+  width: 100%;
+  max-width: 380px;
+  box-sizing: border-box;
+  padding: 24px 22px 22px;
+  background: #23261c;
+  border: 1px solid #5d5a3c;
+  border-radius: 6px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+}
+
+.ov-panel.ov-drop {
+  border-color: #d9b64a;
+  background: #2b2e21;
+}
+
+.ov-title {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 600;
+  color: #f1dc9a;
+}
+
+.ov-text {
+  margin: 0 0 16px;
+  color: #c9c3b0;
+}
+
+.ov-small {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: #9d9886;
+}
+
+.ov-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.ov-row {
+  display: flex;
+  gap: 10px;
+}
+
+.ov-row > * {
+  flex: 1;
+}
+
+.ov-button {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 10px 14px;
+  font: inherit;
+  text-align: center;
+  color: #f3eedd;
+  background: #3d4a2c;
+  border: 1px solid #6e7d4f;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.ov-button:hover {
+  background: #4a5a35;
+}
+
+.ov-button:focus-visible,
+.ov-input:focus-visible {
+  outline: 2px solid #d9b64a;
+  outline-offset: 2px;
+}
+
+.ov-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ov-button.ov-quiet {
+  color: #c9c3b0;
+  background: transparent;
+  border-color: #55533f;
+}
+
+.ov-button.ov-quiet:hover {
+  background: #2d3024;
+}
+
+.ov-label {
+  display: block;
+  margin: 0 0 6px;
+  font-size: 14px;
+  color: #c9c3b0;
+}
+
+.ov-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 48px;
+  padding: 8px 12px;
+  font: 600 24px/1.2 ui-monospace, Consolas, 'Courier New', monospace;
+  letter-spacing: 0.2em;
+  text-align: center;
+  text-transform: uppercase;
+  color: #f3eedd;
+  background: #15170f;
+  border: 1px solid #5d5a3c;
+  border-radius: 4px;
+}
+
+.ov-code {
+  margin: 4px 0 4px;
+  padding: 12px 8px;
+  font: 600 38px/1.1 ui-monospace, Consolas, 'Courier New', monospace;
+  letter-spacing: 0.18em;
+  text-align: center;
+  color: #f1dc9a;
+  background: #15170f;
+  border: 1px solid #5d5a3c;
+  border-radius: 4px;
+  user-select: all;
+  -webkit-user-select: all;
+}
+
+.ov-status {
+  min-height: 1.45em;
+  margin: 14px 0 0;
+  color: #c9c3b0;
+}
+
+.ov-error {
+  min-height: 1.45em;
+  margin: 14px 0 0;
+  color: #f0a08c;
+}
+
+.ov-error:empty,
+.ov-status:empty {
+  display: none;
+}
+
+/* Status line over the running game. */
+.ov-hud {
+  position: fixed;
+  z-index: 9;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 12px;
+  max-width: calc(100vw - 24px);
+  box-sizing: border-box;
+  padding: 8px 14px;
+  font: 14px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: #e6e0cf;
+  background: rgba(28, 30, 22, 0.94);
+  border: 1px solid #5d5a3c;
+  border-radius: 4px;
+}
+
+.ov-hud.ov-alert {
+  border-color: #b5654f;
+}
+
+.ov-hud .ov-button {
+  width: auto;
+  min-height: 32px;
+  padding: 4px 12px;
+  font-size: 14px;
+}
+
+@media (max-width: 420px) {
+  .ov-panel {
+    padding: 20px 16px 18px;
+  }
+
+  .ov-code {
+    font-size: 30px;
+  }
+}
+
+.ov-small a {
+  color: inherit;
+  text-decoration: underline;
+}

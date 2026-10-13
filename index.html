@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Settlers</title>
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
+  #screen { display: block; position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; background: #000; }
+  #message { display: none; padding: 16px; color: #ddd; font: 14px system-ui, sans-serif; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<canvas id="screen"></canvas>
+<div id="message"></div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

@@ -48,7 +48,9 @@ import {
   tutorialOrders,
 } from './start';
 import type { StartPage } from './start';
-import { button, el, faceCanvas, hint, meter, section, segmented, slider, stepper } from './widgets';
+import {
+  button, el, faceCanvas, hint, meter, section, segmented, slider, stepper, toggle,
+} from './widgets';
 
 /* What the window sets up: the game types of the canvas box. 'saved' is its
    load type, which the window only has for the host of an online game (a
@@ -66,6 +68,8 @@ export interface GameOptions {
   stockPreset: number;
   /* One of PEACE_MINUTES_CHOICES; 0 is no peace. */
   peaceMinutes: number;
+  /* EXT: extra carriers on busy roads. */
+  busyRoads: boolean;
 }
 
 const MAP_SIZE_MIN = 3;
@@ -83,7 +87,11 @@ export class SetupModel {
   seedText: string;
   /* The saved game of the 'saved' mode. */
   savedPath = '';
-  readonly options: GameOptions = { stockPreset: STOCK_NORMAL, peaceMinutes: 0 };
+  readonly options: GameOptions = {
+    stockPreset: STOCK_NORMAL,
+    peaceMinutes: 0,
+    busyRoads: false,
+  };
 
   constructor(readonly online: OnlineHostHooks | null) {
     /* The constructor of GameInitBox. */
@@ -533,6 +541,18 @@ function gameOptionsSection(model: SetupModel): Widget {
     },
   });
 
+  /* EXT: Flag.extUpdateLoad(). */
+  const busyRoads = toggle({
+    label: 'Extra carriers on busy roads',
+    get: () => options.busyRoads,
+    set: (on) => {
+      options.busyRoads = on;
+      update();
+    },
+  });
+  const busyRoadsText = hint(
+    'A road where goods keep piling up gets one more carrier than its length allows.');
+
   /* Game.updateTeamWinner() and Game.updateWinner(). */
   const teamText = hint('');
   const problem = el('p', 'su-team-problem');
@@ -544,6 +564,7 @@ function gameOptionsSection(model: SetupModel): Widget {
   function update(): void {
     stock.update?.();
     peace.update?.();
+    busyRoads.update?.();
     const [none, a, b] = model.teams();
     const key = `${options.stockPreset}|${options.peaceMinutes}|${none}|${a}|${b}`;
     if (key === shown) return;
@@ -571,6 +592,7 @@ function gameOptionsSection(model: SetupModel): Widget {
   model.onTeamsChange = update;
 
   const root = section('Game options', stock, stockText, peace, peaceText,
+    busyRoads, busyRoadsText,
     el('div', 'mk-label su-team-title', 'Teams'), teamText, problem);
   return { el: root.el, update };
 }

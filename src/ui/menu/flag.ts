@@ -21,7 +21,9 @@ import { actionsSection, boxFlag, objectHeader } from './building-parts';
 import type { Pin } from './building-parts';
 import type { BoxContext, BoxView, Widget } from './kit';
 import { resourceLabel } from './names';
-import { button, el, flagIcon, iconCanvas, numberRow, resourceIcon, section, serfIcon } from './widgets';
+import {
+  button, el, flagIcon, hint, iconCanvas, numberRow, resourceIcon, section, serfIcon,
+} from './widgets';
 
 /* The six directions, clockwise from the right as the game counts them. */
 const directions: { dir: Direction; name: string }[] = [
@@ -47,9 +49,20 @@ function roadText(flag: Flag, dir: Direction): string {
     return 'No road';
   }
   const what = flag.isWaterPath(dir) ? 'Water road' : 'Road';
-  if (flag.hasTransporter(dir)) return `${what}, carrier present`;
-  if (flag.serfRequested(dir)) return `${what}, no carrier, one is on the way`;
-  return `${what}, no carrier`;
+  /* EXT (busy roads): the number of carriers on the road and whether the
+     road is busy, see Flag.extRoadBusy(). The check box of the original is
+     hasTransporter(): goods go by this road. */
+  const count = flag.freeTransporterCount(dir);
+  const busy = flag.extRoadBusy(dir) ? ', busy' : '';
+  if (count === 0) {
+    if (flag.hasTransporter(dir)) return `${what}, carrier present`;
+    if (flag.serfRequested(dir)) return `${what}, no carrier, one is on the way`;
+    return `${what}, no carrier`;
+  }
+  const carriers = `${count} ${count === 1 ? 'carrier' : 'carriers'}`;
+  const closed = flag.hasTransporter(dir) ? '' : ', takes no new goods now';
+  const coming = flag.serfRequested(dir) ? ', one more is on the way' : '';
+  return `${what}, ${carriers}${busy}${closed}${coming}`;
 }
 
 function roadCount(flag: Flag): number {
@@ -191,6 +204,13 @@ function flagBox(ctx: BoxContext): BoxView {
     row.el.classList.add('bw-wide-value');
     return row;
   }));
+
+  /* EXT (busy roads): what "busy" means, only in a game with the rule. */
+  if (ctx.game.getRules().busyRoads) {
+    roads.content.append(hint(
+      'A road is busy while three or more goods keep waiting for it. ' +
+      'A busy road calls one more carrier.'));
+  }
 
   win.add(
     roads,

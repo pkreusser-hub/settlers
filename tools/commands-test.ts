@@ -77,7 +77,7 @@ function attackScene(stockPreset: number, peaceMinutes: number, teams: number[])
     info.setDefaultColors();
     info.getPlayer(0).setTeam(teams[0]);
     info.getPlayer(1).setTeam(teams[1]);
-    info.setRules({ stockPreset, peaceMinutes });
+    info.setRules({ stockPreset, peaceMinutes, busyRoads: false });
     const game = info.instantiate()! as any;
     game.rnd = new Random(0x1234, 0x5678, 0x9abc);
     const map = game.getMap();

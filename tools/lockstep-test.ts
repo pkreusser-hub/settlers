@@ -1091,9 +1091,10 @@ function main(): void {
   print('\n17. game options and teams in the setup: two people and two computer players in two teams');
   {
     const setup = makeTestSetup(2, 4, '8667715887436237', '3183215728814883');
-    check(setup.rules.stockPreset === 0 && setup.rules.peaceMinutes === 0 && setup.players.every((p) => p.team === 0),
+    check(setup.rules.stockPreset === 0 && setup.rules.peaceMinutes === 0 && setup.rules.busyRoads === false &&
+      setup.players.every((p) => p.team === 0),
       'a setup made without options has the defaults and no teams');
-    setup.rules = { stockPreset: 1, peaceMinutes: 10 };
+    setup.rules = { stockPreset: 1, peaceMinutes: 10, busyRoads: true };
     [1, 2, 1, 2].forEach((team, i) => { setup.players[i].team = team; });
     const wire = JSON.parse(JSON.stringify(setup)) as GameSetup;
     check(isValidSetup(wire), 'the setup with options and teams is valid after JSON');
@@ -1108,6 +1109,8 @@ function main(): void {
       'a team that does not exist, or none at all, is refused');
     check(bad((c) => { c.rules.stockPreset = 3; }) && bad((c) => { c.rules.peaceMinutes = 15; }) &&
       bad((c) => { c.rules.peaceMinutes = -10; }) &&
+      bad((c) => { (c.rules as unknown as { busyRoads: unknown }).busyRoads = 1; }) &&
+      bad((c) => { delete (c.rules as unknown as { busyRoads?: boolean }).busyRoads; }) &&
       bad((c) => { (c as unknown as { rules: unknown }).rules = null; }) &&
       bad((c) => { delete (c as unknown as { rules?: unknown }).rules; }),
       'options that do not exist, or none at all, are refused');
@@ -1115,7 +1118,7 @@ function main(): void {
     const match = new Match(SEED + 3, setup);
     const same = match.sides.every((side) => {
       const g = side.game;
-      return g.getRules().stockPreset === 1 && g.getRules().peaceMinutes === 10 &&
+      return g.getRules().stockPreset === 1 && g.getRules().peaceMinutes === 10 && g.getRules().busyRoads &&
         [1, 2, 1, 2].every((team, i) => g.getPlayer(i)!.getTeam() === team) &&
         g.isAllied(0, 2) && g.isAllied(1, 3) && !g.isAllied(0, 1);
     });

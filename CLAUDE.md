@@ -65,7 +65,7 @@ Rules that the original does not have are marked `// EXT:` in the code. For each
 - The computer players must keep working with it.
 - A change that online players must share bumps `PROTOCOL_VERSION`.
 
-In the game so far: game options (`GameRules`: starting stock, peace) and teams (`Player.getTeam`, `Game.isAllied`, `Game.mayAttack`), tested by `tools/teams-test.ts`; building pause, output cap and upgrade in place (`Building.extPaused`, `extCap`, `upgradeTo`), tested by `tools/buildings-test.ts`.
+In the game so far: game options (`GameRules`: starting stock, peace) and teams (`Player.getTeam`, `Game.isAllied`, `Game.mayAttack`), tested by `tools/teams-test.ts`; building pause, output cap and upgrade in place (`Building.extPaused`, `extCap`, `upgradeTo`), tested by `tools/buildings-test.ts`; extra carriers on busy roads (`GameRules.busyRoads`, `Flag.extLoad`, `extBusy`, `extRoadBusy`; no command, the flags measure it), tested by `tools/roads-test.ts`.
 
 ## HTML menus
 

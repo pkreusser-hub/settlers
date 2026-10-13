@@ -22,7 +22,14 @@ interface Hashable {
     castleKnights: number;
     getSerfCount(type: number): number;
   }>;
-  flags: Iterable<{ getIndex(): number; getPosition(): number; getOwner(): number }>;
+  flags: Iterable<{
+    getIndex(): number;
+    getPosition(): number;
+    getOwner(): number;
+    // EXT: busy roads.
+    extLoad: number[];
+    extBusy: boolean[];
+  }>;
   inventories: Iterable<{
     getIndex(): number;
     getOwner(): number;
@@ -123,6 +130,19 @@ export function stateHash(game: Game): number {
     mix(f.getIndex());
     mix(f.getPosition());
     mix(f.getOwner());
+    // EXT: busy roads. Mixed in only for a flag that has a load, so that a
+    // game without the rule hashes as before.
+    let load = false;
+    for (let d = 0; d < 6; d++) {
+      if (f.extLoad[d] !== 0 || f.extBusy[d]) load = true;
+    }
+    if (load) {
+      mix(0x45585433); /* 'EXT3' */
+      for (let d = 0; d < 6; d++) {
+        mix(f.extLoad[d]);
+        mix(f.extBusy[d] ? 1 : 0);
+      }
+    }
   }
 
   for (const inv of g.inventories) {
@@ -145,6 +165,8 @@ export function stateHash(game: Game): number {
       }
       mix(game.getWinningPlayer());
     }
+    // EXT: busy roads, only when on.
+    if (rules.busyRoads) mix(0x45585432); /* 'EXT2' */
   }
   // EXT: end of the block.
 

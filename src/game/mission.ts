@@ -534,7 +534,7 @@ export class GameInfo {
   protected level: number;
   // EXT: the game options (GameRules of game.ts). Missions and tutorials
   // keep the defaults and no teams.
-  protected rules: GameRules = { stockPreset: 0, peaceMinutes: 0 };
+  protected rules: GameRules = { stockPreset: 0, peaceMinutes: 0, busyRoads: false };
 
   // PORT: `static Mission mission[]` is declared in mission.h but never
   // defined or used; the tables are the file-level `missions` and `tutorials`.

@@ -94,6 +94,8 @@ export const TICKS_PER_MINUTE = 6000;
 export interface GameRules {
   stockPreset: number; /* STOCK_NORMAL, STOCK_POOR, STOCK_RICH */
   peaceMinutes: number; /* One of PEACE_MINUTES_CHOICES. */
+  // EXT: extra carriers on busy roads, see Flag.extUpdateLoad().
+  busyRoads: boolean;
 }
 
 export function isValidTeam(v: unknown): v is number {
@@ -106,7 +108,8 @@ export function isValidGameRules(v: unknown): v is GameRules {
   return (rules.stockPreset === STOCK_NORMAL || rules.stockPreset === STOCK_POOR ||
           rules.stockPreset === STOCK_RICH) &&
          typeof rules.peaceMinutes === 'number' &&
-         PEACE_MINUTES_CHOICES.includes(rules.peaceMinutes);
+         PEACE_MINUTES_CHOICES.includes(rules.peaceMinutes) &&
+         typeof rules.busyRoads === 'boolean';
 }
 
 const GROUND_ANALYSIS_RADIUS = 25;
@@ -266,6 +269,8 @@ export class Game {
   // "peace_minutes"; the teams are in the players.
   protected stockPreset = STOCK_NORMAL;
   protected peaceMinutes = 0;
+  // EXT: extra carriers on busy roads. Saved as "busy_roads" when on.
+  protected busyRoads = false;
 
   /* Work fields of the computer players. */
   protected aiGame: GameAIFields;
@@ -404,7 +409,14 @@ export class Game {
   // EXT: game options and teams (to the end of this block).
 
   getRules(): GameRules {
-    return { stockPreset: this.stockPreset, peaceMinutes: this.peaceMinutes };
+    return { stockPreset: this.stockPreset, peaceMinutes: this.peaceMinutes,
+             busyRoads: this.busyRoads };
+  }
+
+  /* EXT: whether a busy road may call one carrier more than its length
+     gives it (GameRules.busyRoads). */
+  hasBusyRoads(): boolean {
+    return this.busyRoads;
   }
 
   /* Set before the first castle is built; values that are not valid leave
@@ -413,6 +425,7 @@ export class Game {
     if (!isValidGameRules(rules)) return;
     this.stockPreset = rules.stockPreset;
     this.peaceMinutes = rules.peaceMinutes;
+    this.busyRoads = rules.busyRoads;
   }
 
   /* Ticks until attacks are allowed, 0 when they are. */
@@ -3321,6 +3334,9 @@ export class Game {
       this.setRules({
         stockPreset: gameReader.value('stock_preset').readInt(),
         peaceMinutes: gameReader.value('peace_minutes').readInt(),
+        // EXT: busy roads; written only when on.
+        busyRoads: gameReader.hasValue('busy_roads') &&
+                   gameReader.value('busy_roads').readInt() !== 0,
       });
     }
 
@@ -3476,6 +3492,8 @@ export class Game {
     // EXT: game options.
     writer.value('stock_preset').write(this.stockPreset);
     writer.value('peace_minutes').write(this.peaceMinutes);
+    // EXT: busy roads, only when on.
+    if (this.busyRoads) writer.value('busy_roads').write(1);
     writer.value('map.gold_morale_factor').write(this.mapGoldMoraleFactor);
     writer.value('player_score_leader').write(
       ((this.landLeader >= 0 ? BIT(this.landLeader) : 0) |

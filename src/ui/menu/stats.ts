@@ -338,6 +338,11 @@ function stat8Page(ctx: BoxContext): BoxView {
       label: 'Teams',
       get: () => (game.hasTeams() ? 'Fixed. Allies cannot attack each other.' : 'None'),
     }),
+    // EXT: busy roads.
+    numberRow({
+      label: 'Extra carriers on busy roads',
+      get: () => (rules.busyRoads ? 'On' : 'Off'),
+    }),
   ];
 
   win.add(

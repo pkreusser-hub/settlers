@@ -43,7 +43,7 @@ function makeGame(teams: number[], stockPreset = STOCK_NORMAL, peaceMinutes = 0,
     info.getPlayer(i).setTeam(teams[i]);
   }
   info.setDefaultColors();
-  info.setRules({ stockPreset, peaceMinutes });
+  info.setRules({ stockPreset, peaceMinutes, busyRoads: false });
   const game = info.instantiate()!;
   game.setRandom(new Random('3183215728814883'));
   return game;

@@ -1962,7 +1962,10 @@ export class Serf extends GameObject {
 
         if (flag.freeTransporterCount(revDir) > 1) {
           this.s.transporting.waitCounter += 1;
-          if (this.s.transporting.waitCounter > 3) {
+          // EXT: a carrier a road has above its number leaves at once
+          // (busy roads; never so while the rule is off).
+          if (this.s.transporting.waitCounter > 3 ||
+              flag.extSurplusTransporter(revDir)) {
             flag.transporterToServe(revDir);
             otherFlag.transporterToServe(otherDir);
             this.s.transporting.waitCounter = -1;

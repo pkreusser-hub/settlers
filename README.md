@@ -92,6 +92,12 @@ None of these change a game that does not use them.
   shows the time left.
 - Teams: the host puts players in team A or B in the setup. Allies cannot
   attack each other, computer players included, and a team wins together.
+- Extra carriers on busy roads: an option in the game setup, off by default.
+  A road where three or more goods keep waiting at one end for about 30
+  seconds gets one more carrier than its length allows. The carrier goes home
+  when the road is quiet again. The window of a flag shows the carriers of
+  each road and which roads are busy. Water roads and roads of 24 steps or
+  more stay as they are.
 - Pause a building: its worker stays in but makes nothing.
 - Output cap: a building stops when the stock of what it makes reaches the
   number you set, and starts again when the stock falls.

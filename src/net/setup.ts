@@ -112,7 +112,12 @@ export class NetGameInfo extends GameInfo {
       this.players.push(player);
     }
     // EXT: game options.
-    this.rules = { stockPreset: setup.rules.stockPreset, peaceMinutes: setup.rules.peaceMinutes };
+    this.rules = {
+      stockPreset: setup.rules.stockPreset,
+      peaceMinutes: setup.rules.peaceMinutes,
+      // EXT: busy roads.
+      busyRoads: setup.rules.busyRoads,
+    };
   }
 
   /* GameInfo.instantiate() with the one difference that the random numbers

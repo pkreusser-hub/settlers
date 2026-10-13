@@ -54,6 +54,21 @@ export const FLAG_MAX_RES_COUNT = 8;
 
 const SEARCH_MAX_DEPTH = 0x10000;
 
+/* EXT: extra carriers on busy roads (GameRules.busyRoads). A flag measures
+   each of its roads: the load of a road rises by the ticks of an update
+   while at least three goods wait at the flag for that road and the road
+   has all the carriers its length gives it, and falls by them otherwise.
+   The road turns busy at EXT_BUSY_ON, stays so until the load is back at 0,
+   and the load stops at EXT_BUSY_MAX. A road that is busy at either end may
+   call one carrier more. 100 ticks are a second at normal speed. */
+export const EXT_BUSY_ON = 3000;
+export const EXT_BUSY_MAX = 6000;
+/* EXT: the most carriers a road can have; the saves keep the number in four
+   bits and SerfPathInfo lists 16 serfs. */
+export const EXT_MAX_PATH_SERFS = 15;
+/* EXT: carriers by length category, as in Flag.update(). */
+const extBaseTransporters = [1, 2, 3, 4, 6, 8, 11, 15];
+
 export class ResourceSlot {
   type: ResourceType = ResourceType.TypeNone;
   dir: Direction = Direction.DirectionNone;
@@ -103,6 +118,11 @@ export class Flag extends GameObject {
   serfsAccepted: boolean;
   resourcesAccepted: boolean;
 
+  // EXT: busy roads, of each path: the load counted in ticks and whether
+  // the road is busy at this end. All zero while the rule is off.
+  extLoad: number[];
+  extBusy: boolean[];
+
   constructor(game: Game, index: number) {
     super(game, index);
     this.owner = u32(-1);
@@ -139,6 +159,8 @@ export class Flag extends GameObject {
     this.inventoryBuilding = false;
     this.serfsAccepted = false;
     this.resourcesAccepted = false;
+    this.extLoad = [0, 0, 0, 0, 0, 0]; // EXT: busy roads.
+    this.extBusy = [false, false, false, false, false, false];
     for (let j = 0; j < FLAG_MAX_RES_COUNT; j++) {
       const s = new ResourceSlot();
       s.type = ResourceType.TypeNone;
@@ -186,6 +208,7 @@ export class Flag extends GameObject {
     this.pickupSlot[dir] = 0;
     this.pickupScheduled[dir] = false;
     this.otherEndpoint.f[dir] = null;
+    this.extResetLoad(dir); // EXT: busy roads.
 
     /* Mark resource path for recalculation if they would
      have followed the removed path. */
@@ -289,6 +312,62 @@ export class Flag extends GameObject {
     this.transporterRequested[dir] = false;
     this.freeTransporters[dir] = u32(this.freeTransporters[dir] + 1);
   }
+
+  // EXT: busy roads (to the end of this block).
+
+  /* A new, changed or removed road starts without load. */
+  extResetLoad(dir: Direction): void {
+    this.extLoad[dir] = 0;
+    this.extBusy[dir] = false;
+  }
+
+  /* Whether the rule can give the road one carrier more: a land road that
+     has room for one below EXT_MAX_PATH_SERFS (the longest roads, 24 steps
+     and more, have 15 already). */
+  extRoadCanBeBusy(dir: Direction): boolean {
+    return this.game.hasBusyRoads() && this.hasPath(dir) && !this.isWaterPath(dir) &&
+           extBaseTransporters[this.lengthCategory(dir)] < EXT_MAX_PATH_SERFS;
+  }
+
+  /* Whether the road is busy, measured at this flag or at the other end. */
+  extRoadBusy(dir: Direction): boolean {
+    if (!this.extRoadCanBeBusy(dir)) return false;
+    if (this.extBusy[dir]) return true;
+    const other = this.otherEndpoint.f[dir];
+    return other !== null && other.extBusy[this.otherEndDirection[dir]];
+  }
+
+  /* The carriers the road may have: what its length gives, and one more
+     while it is busy. */
+  extMaxTransporters(dir: Direction): number {
+    const base = extBaseTransporters[this.lengthCategory(dir)];
+    return this.extRoadBusy(dir) ? base + 1 : base;
+  }
+
+  /* Whether the road has more carriers than it may have now. The serf that
+     finds nothing to carry leaves at once then, by the way the original
+     sends a spare carrier home (handleSerfTransportingState()). */
+  extSurplusTransporter(dir: Direction): boolean {
+    return this.extRoadCanBeBusy(dir) &&
+           this.freeTransporterCount(dir) > this.extMaxTransporters(dir);
+  }
+
+  /* Count the load of a road in Flag.update(). crowded: at least three
+     goods wait at this flag for the road. */
+  protected extUpdateLoad(dir: Direction, crowded: boolean): void {
+    if (!this.extRoadCanBeBusy(dir)) return;
+    const diff = this.game.getTickDiff();
+    if (crowded &&
+        this.freeTransporterCount(dir) >= extBaseTransporters[this.lengthCategory(dir)]) {
+      this.extLoad[dir] = Math.min(this.extLoad[dir] + diff, EXT_BUSY_MAX);
+      if (this.extLoad[dir] >= EXT_BUSY_ON) this.extBusy[dir] = true;
+    } else {
+      this.extLoad[dir] = Math.max(this.extLoad[dir] - diff, 0);
+      if (this.extLoad[dir] === 0) this.extBusy[dir] = false;
+    }
+  }
+
+  // EXT: end of the block.
 
   /* The slot that is scheduled for pickup by the given path. */
   scheduledSlot(dir: Direction): number {
@@ -480,6 +559,15 @@ export class Flag extends GameObject {
     this.serfsAccepted = BIT_TEST(bits, 7) !== 0;
     bits = reader.value('bld2_flags').readInt();
     this.resourcesAccepted = BIT_TEST(bits, 7) !== 0;
+
+    // EXT: busy roads; written only for a flag that has a load.
+    if (reader.hasValue('ext_road_load')) {
+      bits = reader.value('ext_road_busy').readInt();
+      for (const i of cycleDirectionsCw()) {
+        this.extLoad[i] = reader.value('ext_road_load').at(i).readInt();
+        this.extBusy[i] = BIT_TEST(bits, i) !== 0;
+      }
+    }
   }
 
   // PORT: operator<< (SaveWriterText &writer, Flag &flag).
@@ -519,6 +607,20 @@ export class Flag extends GameObject {
       .value('bld_flags')
       .write((this.inventoryBuilding ? BIT(6) : 0) | (this.serfsAccepted ? BIT(7) : 0));
     writer.value('bld2_flags').write(this.resourcesAccepted ? BIT(7) : 0);
+
+    // EXT: busy roads, only for a flag that has a load.
+    let extBits = 0;
+    let extAny = false;
+    for (const d of cycleDirectionsCw()) {
+      if (this.extBusy[d]) extBits |= BIT(d);
+      if (this.extLoad[d] !== 0 || this.extBusy[d]) extAny = true;
+    }
+    if (extAny) {
+      for (const d of cycleDirectionsCw()) {
+        writer.value('ext_road_load').write(this.extLoad[d]);
+      }
+      writer.value('ext_road_busy').write(extBits);
+    }
   }
 
   // PORT: named schedule_known_dest_cb_ in the C++ (trailing underscore).
@@ -628,6 +730,8 @@ export class Flag extends GameObject {
   ): void {
     destFlag.addPath(inDir, waterPath);
     this.addPath(outDir, waterPath);
+    destFlag.extResetLoad(inDir); // EXT: busy roads.
+    this.extResetLoad(outDir);
 
     destFlag.otherEndDirection[inDir] = outDir;
     this.otherEndDirection[outDir] = inDir;
@@ -690,6 +794,9 @@ export class Flag extends GameObject {
     /* Update transporter flags, decide if serf needs to be sent to road */
     for (const j of cycleDirectionsCcw()) {
       if (this.hasPath(j)) {
+        // EXT: busy roads.
+        this.extUpdateLoad(j, BIT_TEST(resWaiting[2], j) !== 0);
+
         if (this.serfRequested(j)) {
           if (BIT_TEST(resWaiting[2], j)) {
             if (waitingCount >= 7) {
@@ -699,7 +806,9 @@ export class Flag extends GameObject {
             this.transporterSet |= BIT(j);
           }
         } else if (this.freeTransporterCount(j) === 0 || BIT_TEST(resWaiting[2], j)) {
-          const maxTr = maxTransporters[this.lengthCategory(j)];
+          let maxTr = maxTransporters[this.lengthCategory(j)];
+          // EXT: a busy road may call one carrier more.
+          if (this.extRoadBusy(j)) maxTr += 1;
           if (this.freeTransporterCount(j) < u32(maxTr) && !this.serfRequestFail()) {
             const r = this.callTransporter(j, this.isWaterPath(j));
             if (!r) this.serfRequestFailed = true;
@@ -734,6 +843,7 @@ export class Flag extends GameObject {
     const otherDir = data.flagDir;
 
     this.addPath(dir, otherFlag.isWaterPath(otherDir));
+    this.extResetLoad(dir); // EXT: busy roads.
 
     otherFlag.transporterSet &= ~BIT(otherDir);
 
@@ -744,6 +854,7 @@ export class Flag extends GameObject {
     this.setLengthBits(dir, len << 4);
     otherFlag.freeTransporters[otherDir] = 0;
     otherFlag.pathLengthCategory[otherDir] = len;
+    otherFlag.extResetLoad(otherDir); // EXT: busy roads.
 
     if (otherFlag.serfRequested(otherDir)) {
       this.transporterRequested[dir] = true;
@@ -865,6 +976,8 @@ export class Flag extends GameObject {
     const len = Flag.getRoadLengthValue(path1Data.pathLen + path2Data.pathLen);
     flag1.setLengthBits(dir1, len << 4);
     flag2.setLengthBits(dir2, len << 4);
+    flag1.extResetLoad(dir1); // EXT: busy roads.
+    flag2.extResetLoad(dir2);
 
     const maxSerfs = maxTransporters[flag1.lengthCategory(dir1)];
     const serfCount = path1Data.serfCount + path2Data.serfCount;

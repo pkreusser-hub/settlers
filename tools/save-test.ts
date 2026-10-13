@@ -3,8 +3,8 @@
 //
 // With a fourth argument `ext` the game is not the mission but a custom game
 // of four computer players with the game options and teams in use (EXT:
-// rich stock, 20 minutes of peace, teams A A B and none); the options and
-// teams must come back from the file.
+// rich stock, 20 minutes of peace, extra carriers on busy roads, teams A A B
+// and none); the options and teams must come back from the file.
 //
 // Checks, at several points of a game with computer players:
 //  1. save -> load -> save gives the same text (nothing is lost or changed
@@ -54,7 +54,7 @@ function load(text: string): Game {
 
 // EXT (game options and teams): the game of the `ext` run.
 const extTeams = [1, 1, 2, 0];
-const extRules = { stockPreset: 2, peaceMinutes: 20 };
+const extRules = { stockPreset: 2, peaceMinutes: 20, busyRoads: true };
 function extInfo(): GameInfo {
   const custom = new GameInfo(new Random('8667715887436237'));
   custom.removeAllPlayers();
@@ -69,7 +69,7 @@ function extInfo(): GameInfo {
 }
 function extState(g: Game): string {
   const teams = [0, 1, 2, 3].map((i) => g.getPlayer(i)?.getTeam() ?? -1).join('');
-  return `stock ${g.getRules().stockPreset}, peace ${g.getRules().peaceMinutes}, teams ${teams}`;
+  return `stock ${g.getRules().stockPreset}, peace ${g.getRules().peaceMinutes}, busy roads ${g.getRules().busyRoads ? 'on' : 'off'}, teams ${teams}`;
 }
 // EXT: end of the block.
 
@@ -90,7 +90,7 @@ for (let p = 1; p <= points; p++) {
   const b = load(text);
   // EXT (game options and teams): they come back from the file.
   if (ext) {
-    const want = `stock ${extRules.stockPreset}, peace ${extRules.peaceMinutes}, teams ${extTeams.join('')}`;
+    const want = `stock ${extRules.stockPreset}, peace ${extRules.peaceMinutes}, busy roads on, teams ${extTeams.join('')}`;
     const ok = extState(game) === want && extState(a) === want && a.isAllied(0, 1) && !a.isAllied(0, 2) &&
       a.getPeaceTicksLeft() === game.getPeaceTicksLeft();
     if (!ok) failed = true;

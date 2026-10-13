@@ -20,6 +20,7 @@ export class Hud {
   protected speedButtons: HTMLButtonElement[] = [];
   protected spotsButton: HTMLButtonElement;
   protected smoothButton: HTMLButtonElement;
+  protected globeButton: HTMLButtonElement;
   protected pauseButton: HTMLButtonElement;
   protected saveButton: HTMLButtonElement;
   protected loadButton: HTMLButtonElement;
@@ -67,7 +68,12 @@ export class Hud {
       const loop = this.loop();
       if (loop) loop.setSmooth(!loop.getSmooth());
     });
-    map.append(this.spotsButton, this.smoothButton);
+    // PORT: not in the C++. The map as the near side of a small planet.
+    this.globeButton = this.button('Globe', 'Show the map as a planet with a horizon', () => {
+      const loop = this.loop();
+      if (loop) loop.setGlobe(!loop.getGlobe());
+    });
+    map.append(this.spotsButton, this.smoothButton, this.globeButton);
 
     const ui = this.group('Panel');
     ui.append(
@@ -140,5 +146,6 @@ export class Hud {
       String(viewport !== null && viewport.hasLayer(ViewportLayer.LayerBuilds)),
     );
     this.smoothButton.setAttribute('aria-pressed', String(this.loop()?.getSmooth() ?? false));
+    this.globeButton.setAttribute('aria-pressed', String(this.loop()?.getGlobe() ?? false));
   }
 }

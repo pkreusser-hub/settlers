@@ -803,6 +803,9 @@ export class Graphics {
   // keeps in place, null for the middle of the view.
   protected mapScale = 1;
   protected mapSmooth = false;
+  // PORT: not in the C++. Whether the map view is shown as a planet (see
+  // globe.ts).
+  protected mapGlobe = false;
   protected mapZoomAnchor: [number, number] | null = null;
   /* The font of the texts; the font sprites of the game data without it. */
   protected font: Font | null;
@@ -955,6 +958,14 @@ export class Graphics {
 
   setMapSmooth(smooth: boolean): void {
     this.mapSmooth = smooth;
+  }
+
+  getMapGlobe(): boolean {
+    return this.mapGlobe;
+  }
+
+  setMapGlobe(globe: boolean): void {
+    this.mapGlobe = globe;
   }
 
   getMapZoomAnchor(): [number, number] | null {

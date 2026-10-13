@@ -294,7 +294,8 @@ export class Chat {
     if (!(px > 0) || !(py > 0)) return null;
     const x = Math.trunc((clientX - rect.left) / px);
     const y = Math.trunc((clientY - rect.top) / py);
-    return viewport.mapPosFromScreenPix(x, y);
+    /* Null in the sky of the "Globe" view. */
+    return viewport.mapPosFromViewPix(x, y);
   }
 
   /* Keep the markers where their places are while the map moves. */
@@ -343,7 +344,13 @@ export class Chat {
         el.hidden = true;
         continue;
       }
-      let [sx, sy] = viewport.screenPixFromMapCoord(mark.pos);
+      /* Null behind the horizon of the "Globe" view. */
+      const place = viewport.viewPixFromMapCoord(mark.pos);
+      if (place === null) {
+        el.hidden = true;
+        continue;
+      }
+      let [sx, sy] = place;
       if (sx > width - 64) sx -= width;
       if (sy > height - 64) sy -= height;
       const x = rect.left + sx * px;

@@ -37,7 +37,78 @@ export interface BuildingInfo {
   does?: string;
   /* Tools the worker is made with (Building::request_serf_if_needed). */
   tools: ResourceType[];
+  /* Set where the work is not one unit of each input for one unit of
+     output; see the ratio notes below. */
+  ratio?: Ratio;
 }
+
+export interface Ratio {
+  /* How many of each of `needs`, in its order. */
+  needs: string[];
+  /* How many of each of `makes`, in its order. */
+  makes: string[];
+  /* One sentence on why, for the detail line and the tooltips. */
+  note: string;
+}
+
+// Ratios, read from the state handlers of src/game/serf.ts and the stock
+// methods of src/game/building.ts. Every handler takes its input with
+// Building::useResourceInStock(n) (one unit of stock n) or
+// Building::useResourcesInStocks() (one unit of stock 0 and one of stock 1)
+// and hands out one resource through StateMoveResourceOut. One in, one out:
+//   sawmill       handleSerfSawingState: useResourceInStock(1), one plank.
+//   mill          handleSerfMillingState: useResourceInStock(0), one flour.
+//   baker         handleSerfBakingState: useResourceInStock(0), one bread.
+//   butcher       handleSerfButcheringState: useResourceInStock(0), one meat.
+//   boat builder  handleSerfBuildingBoatState: useResourceInStock(0), one boat.
+//   smelters      handleSerfSmeltingState: useResourcesInStocks(), one steel
+//                 or one gold bar.
+//   toolmaker     handleSerfMakingToolState: useResourcesInStocks(), one
+//                 tool, drawn by the player's tool priorities (at random
+//                 when all are zero).
+// The workers without input bring one unit per walk
+// (handleSerfFreeWalkingStateDestReached: one dropResource each): one log
+// per felled tree, one stone per walk to a rock, one wheat per reaped field,
+// one fish per walk (handleSerfFishingState: up to ten casts, each catches
+// by chance, so a fisher can come back with nothing). The forester plants
+// one tree per walk.
+// Not one for one:
+//   weaponsmith   handleSerfMakingWeaponState: useResourcesInStocks() is
+//                 called only while the building's sfx bit is clear. The
+//                 sword made then sets the bit, the next round makes a
+//                 shield without taking anything and clears it. One coal
+//                 and one steel make a sword and a shield.
+//   mines         handleSerfMiningState: substate 0 skips the meal when
+//                 (randomInt() & 7) === 0, one round in eight; else substate
+//                 1 takes one food (useResourceInStock(0)). Substates 4 to 7
+//                 are four tries to find the deposit near the mine; a round
+//                 that finds none ends with nothing (substate 10,
+//                 mining.res === 0) and the food is gone. Seven food for
+//                 eight loads at best, fewer loads as the ground runs out.
+//   pig farm      handleSerfPigfarmingState: wheat is taken only in mode 0
+//                 (useResourceInStock(0)). The farmer starts there once;
+//                 after that a round that hands out no pig goes back to mode
+//                 0 one time in sixteen ((randomInt() & 0xf) === 0) and to
+//                 mode 1, without wheat, the other fifteen. After a pig he
+//                 comes back in mode 6 (entering building, TypePigFarmer),
+//                 again without wheat. Pigs breed by chance (breedingProb)
+//                 three times a round. Playing these rules through five
+//                 million rounds outside the game gave 8.6 pigs per wheat.
+const mineRatio: Ratio = {
+  needs: ['7'],
+  makes: ['up to 8'],
+  note: 'The miner eats before 7 loads in 8. A dig that finds nothing still costs the meal.',
+};
+const weaponRatio: Ratio = {
+  needs: ['1', '1'],
+  makes: ['1', '1'],
+  note: 'One coal and one steel make a sword, then a shield.',
+};
+const pigRatio: Ratio = {
+  needs: ['1'],
+  makes: ['about 8'],
+  note: 'The pigs breed by chance. The farmer takes wheat only now and then, about once per 8 pigs.',
+};
 
 const R = ResourceType;
 const B = BuildingType;
@@ -75,7 +146,7 @@ export const buildingInfos: BuildingInfo[] = [
   // serf.ts entering building, TypePigFarmer: stockInit(0, TypeWheat, 8);
   // handleSerfPigfarmingState: useResourceInStock(0), moves TypePig out.
   // requestSerfIfNeeded: TypePigFarmer, no tool.
-  { type: B.TypePigFarm, name: 'Pig farm', group: 'food', needs: [R.TypeWheat], makes: [R.TypePig], tools: [] },
+  { type: B.TypePigFarm, name: 'Pig farm', group: 'food', needs: [R.TypeWheat], makes: [R.TypePig], tools: [], ratio: pigRatio },
   // serf.ts entering building, TypeButcher: stockInit(0, TypePig, 8);
   // handleSerfButcheringState: useResourceInStock(0), moves TypeMeat out.
   // requestSerfIfNeeded: TypeButcher with TypeCleaver.
@@ -86,10 +157,10 @@ export const buildingInfos: BuildingInfo[] = [
   // (one time in eight the miner works without eating). The output is
   // resFromMineType[deposit - 1] with deposit = 4 - (type - TypeStoneMine):
   // stone, coal, iron ore, gold ore. requestSerfIfNeeded: TypeMiner, TypePick.
-  { type: B.TypeStoneMine, name: 'Stone mine', group: 'mining', needs: [R.GroupFood], makes: [R.TypeStone], tools: [R.TypePick] },
-  { type: B.TypeCoalMine, name: 'Coal mine', group: 'mining', needs: [R.GroupFood], makes: [R.TypeCoal], tools: [R.TypePick] },
-  { type: B.TypeIronMine, name: 'Iron mine', group: 'mining', needs: [R.GroupFood], makes: [R.TypeIronOre], tools: [R.TypePick] },
-  { type: B.TypeGoldMine, name: 'Gold mine', group: 'mining', needs: [R.GroupFood], makes: [R.TypeGoldOre], tools: [R.TypePick] },
+  { type: B.TypeStoneMine, name: 'Stone mine', group: 'mining', needs: [R.GroupFood], makes: [R.TypeStone], tools: [R.TypePick], ratio: mineRatio },
+  { type: B.TypeCoalMine, name: 'Coal mine', group: 'mining', needs: [R.GroupFood], makes: [R.TypeCoal], tools: [R.TypePick], ratio: mineRatio },
+  { type: B.TypeIronMine, name: 'Iron mine', group: 'mining', needs: [R.GroupFood], makes: [R.TypeIronOre], tools: [R.TypePick], ratio: mineRatio },
+  { type: B.TypeGoldMine, name: 'Gold mine', group: 'mining', needs: [R.GroupFood], makes: [R.TypeGoldOre], tools: [R.TypePick], ratio: mineRatio },
   // serf.ts entering building, TypeSmelter: stockInit(0, TypeCoal, 8) and
   // stockInit(1, TypeIronOre, 8) in a steel smelter, TypeGoldOre in a gold
   // smelter; handleSerfSmeltingState: useResourcesInStocks() (one of each),
@@ -110,7 +181,7 @@ export const buildingInfos: BuildingInfo[] = [
   // stockInit(1, TypeSteel, 8); handleSerfMakingWeaponState:
   // useResourcesInStocks(), then TypeSword and TypeShield in turn.
   // requestSerfIfNeeded: TypeHammer and TypePincer.
-  { type: B.TypeWeaponSmith, name: 'Weaponsmith', group: 'mining', needs: [R.TypeCoal, R.TypeSteel], makes: [R.TypeSword, R.TypeShield], tools: [R.TypeHammer, R.TypePincer] },
+  { type: B.TypeWeaponSmith, name: 'Weaponsmith', group: 'mining', needs: [R.TypeCoal, R.TypeSteel], makes: [R.TypeSword, R.TypeShield], tools: [R.TypeHammer, R.TypePincer], ratio: weaponRatio },
 
   // building.ts updateMilitary: asks for knights (stock[0]) and, once
   // occupied, for gold bars: stockInit(1, TypeGoldBar, maxGold) with 2, 4
@@ -206,14 +277,33 @@ export function resourceIcons(res: ResourceType): ResourceType[] {
   return res === R.GroupFood ? foodResources : [res];
 }
 
-/* "needs coal, iron ore → makes steel", as words. */
+/* One unit of a resource, for "1 sword" beside "swords". */
+const singularNames: { [res: number]: string } = {
+  [R.TypePig]: 'pig',
+  [R.TypeBoat]: 'boat',
+  [R.TypeGoldBar]: 'gold bar',
+  [R.TypeSword]: 'sword',
+  [R.TypeShield]: 'shield',
+};
+
+/* A resource with its share of the ratio, if the building has one:
+   "7 food", "1 sword", else just "food". */
+export function amountName(res: ResourceType, amount?: string): string {
+  if (amount === undefined) return resourceName(res);
+  const name = amount === '1' ? (singularNames[res] ?? resourceName(res)) : resourceName(res);
+  return `${amount} ${name}`;
+}
+
+/* "needs coal, iron ore → makes steel", as words; with the numbers where
+   the building has a ratio. */
 export function productionLine(info: BuildingInfo): string {
   const parts: string[] = [];
   if (info.needs.length > 0) {
-    parts.push('needs ' + info.needs.map(resourceName).join(', '));
+    parts.push('needs ' + info.needs.map((res, i) => amountName(res, info.ratio?.needs[i])).join(', '));
   }
   if (info.makes.length > 0) {
-    const made = info.makesText ?? info.makes.map(resourceName).join(', ');
+    const made =
+      info.makesText ?? info.makes.map((res, i) => amountName(res, info.ratio?.makes[i])).join(', ');
     parts.push('makes ' + made);
   }
   let line = parts.join(' → ');

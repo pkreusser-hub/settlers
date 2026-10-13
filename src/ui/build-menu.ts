@@ -28,13 +28,13 @@ import {
 } from './overlay-dom';
 import { PopupBoxType } from './popup';
 import {
+  amountName,
   buildGroups,
   buildingCost,
   buildingInfo,
   buildingInfos,
   productionLine,
   resourceIcons,
-  resourceName,
 } from './production';
 import type { BuildingInfo } from './production';
 import { ResourceType } from '../game/resource';
@@ -320,15 +320,16 @@ export class BuildMenu {
     return button;
   }
 
-  /* "needs X, Y → makes Z" with the icons of the resources. */
+  /* "needs X, Y → makes Z" with the icons of the resources, and the numbers
+     where the building has a ratio (production.ts). */
   protected productionLine(info: BuildingInfo): HTMLElement {
     const line = el('span', 'bm-line');
     line.setAttribute('aria-hidden', 'true');
-    const resources = (list: ResourceType[]): void => {
+    const resources = (list: ResourceType[], amounts?: string[]): void => {
       list.forEach((res, i) => {
         if (i > 0) line.append(', ');
         for (const icon of resourceIcons(res)) line.append(resourceCanvas(icon));
-        line.append(' ' + resourceName(res));
+        line.append(' ' + amountName(res, amounts?.[i]));
       });
     };
     let any = false;
@@ -338,7 +339,7 @@ export class BuildMenu {
     }
     if (info.needs.length > 0) {
       line.append(any ? ' → needs ' : 'needs ');
-      resources(info.needs);
+      resources(info.needs, info.ratio?.needs);
       any = true;
     }
     if (info.makes.length > 0) {
@@ -346,9 +347,10 @@ export class BuildMenu {
       if (info.makesText !== undefined) {
         line.append(resourceCanvas(ResourceType.TypeHammer), ' ' + info.makesText);
       } else {
-        resources(info.makes);
+        resources(info.makes, info.ratio?.makes);
       }
     }
+    if (info.ratio !== undefined) line.title = info.ratio.note;
     return line;
   }
 

@@ -35,6 +35,8 @@ interface ChainNode {
   /* What leaves the node, as icons and as a word. */
   out: ResourceType[];
   outText: string;
+  /* "7 food → up to 8", where the building has a ratio (production.ts). */
+  ratio: { needs: [string, ResourceType][]; makes: [string, ResourceType][] } | null;
   detail: string;
 }
 
@@ -84,6 +86,8 @@ function buildNodes(): ChainNode[] {
   for (const [type, col, row] of places) {
     const info = buildingInfo(type)!;
     let detail = `${info.name}: ${productionLine(info)}.`;
+    const ratio = info.ratio;
+    if (ratio !== undefined) detail += ` ${ratio.note}`;
     if (info.tools.length > 0) {
       detail += ` The worker needs ${info.tools.map(resourceName).join(' and ')}.`;
     }
@@ -98,6 +102,13 @@ function buildNodes(): ChainNode[] {
       /* One icon stands for the nine tools. */
       out: info.makesText !== undefined ? [R.TypeHammer] : info.makes,
       outText: info.makesText ?? (info.type === B.TypeForester ? 'trees' : ''),
+      ratio:
+        ratio === undefined
+          ? null
+          : {
+              needs: info.needs.map((res, i) => [ratio.needs[i], res]),
+              makes: info.makes.map((res, i) => [ratio.makes[i], res]),
+            },
       detail,
     });
   }
@@ -105,20 +116,20 @@ function buildNodes(): ChainNode[] {
   // serf.ts handleSerfMiningState: a miner eats one of GroupFood, which is
   // fish, bread or meat (Building::requested_resource_delivered).
   nodes.push({
-    id: 'food', col: 3, row: 3, name: 'Food', type: null, icons: foodResources, out: [], outText: 'to the mines',
+    id: 'food', col: 3, row: 3, name: 'Food', type: null, icons: foodResources, out: [], outText: 'to the mines', ratio: null,
     detail: 'Food: fish, bread and meat count the same. Every mine needs food for its miner.',
   });
   // building.ts startBuilding / updateUnfinished: a site asks for planks in
   // stock[0] and stone in stock[1], as many as constInfo() says.
   nodes.push({
-    id: 'sites', col: 7, row: 1, name: 'Building sites', type: null, icons: [R.TypePlank, R.TypeStone], out: [], outText: '',
+    id: 'sites', col: 7, row: 1, name: 'Building sites', type: null, icons: [R.TypePlank, R.TypeStone], out: [], outText: '', ratio: null,
     detail: 'Building sites: every new building needs planks, most need stone too.',
   });
   // inventory.ts: the castle and the storehouses hold the tools that make a
   // serf a worker (specializeSerf), sword and shield for a knight, and the
   // boat for the sailor of a water road.
   nodes.push({
-    id: 'store', col: 7, row: 3, name: 'Castle, storehouses', type: B.TypeCastle, icons: [], out: [], outText: 'workers, knights',
+    id: 'store', col: 7, row: 3, name: 'Castle, storehouses', type: B.TypeCastle, icons: [], out: [], outText: 'workers, knights', ratio: null,
     detail:
       'Castle and storehouses: store everything. A serf with a tool becomes a worker, ' +
       'with sword and shield a knight, with a boat a sailor. ' +
@@ -301,7 +312,26 @@ export class ChainsView {
       }
       button.append(pic, el('span', 'ch-name', node.name));
 
-      if (node.out.length > 0 || node.outText !== '') {
+      if (node.ratio !== null) {
+        /* The numbers of the ratio in place of the plain output. */
+        const out = el('span', 'ch-out ch-ratio');
+        const side = (list: [string, ResourceType][]): void => {
+          list.forEach(([amount, res], i) => {
+            if (i > 0) out.append(' + ');
+            const part = el('span', 'ch-part', amount + ' ');
+            if (res === R.GroupFood) {
+              part.append('food');
+            } else {
+              part.append(resourceCanvas(res));
+            }
+            out.append(part);
+          });
+        };
+        side(node.ratio.needs);
+        out.append(' → ');
+        side(node.ratio.makes);
+        button.append(out);
+      } else if (node.out.length > 0 || node.outText !== '') {
         const out = el('span', 'ch-out');
         out.append('→ ');
         for (const res of node.out) out.append(resourceCanvas(res));

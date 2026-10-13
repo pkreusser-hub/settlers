@@ -35,6 +35,7 @@ import { EventLoop } from './ui/event-loop';
 import { Graphics } from './ui/gfx';
 import { Hud } from './ui/hud';
 import { Interface } from './ui/interface';
+import { initStockPanel } from './ui/stock-panel';
 import { Translation } from './ui/translation';
 import { Video } from './ui/video';
 
@@ -128,6 +129,7 @@ async function main(): Promise<boolean> {
   new Hud(gameManager, iface);
   initBuildMenu(iface, gameManager);
   initAlerts(iface, gameManager);
+  initStockPanel(iface, gameManager);
 
   // PORT: not in the C++. The lobby lies over the game: a solo game goes on
   // as above, an online game replaces the current game when it starts.

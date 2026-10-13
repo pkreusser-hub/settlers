@@ -823,6 +823,20 @@ export class EventLoopDOM extends EventLoop {
     this.applyZoom();
   }
 
+  // PORT: not in the C++. The "Globe" mode: the map view is shown as the
+  // near side of a small planet (see globe.ts).
+  protected globe = false;
+
+  getGlobe(): boolean {
+    return this.globe;
+  }
+
+  setGlobe(globe: boolean): void {
+    this.globe = globe;
+    this.storeScales();
+    this.applyZoom();
+  }
+
   /* The largest scale that still leaves room for the 352 pixel panel and
      the boxes of the game. */
   protected maxUiScale(): number {
@@ -870,6 +884,7 @@ export class EventLoopDOM extends EventLoop {
         ui = stored.ui;
         map = stored.map;
         this.smooth = stored.smooth === true;
+        this.globe = stored.globe === true;
       }
     } catch {
       // No storage: the defaults.
@@ -884,7 +899,12 @@ export class EventLoopDOM extends EventLoop {
     try {
       localStorage.setItem(
         'settlers.scales',
-        JSON.stringify({ ui: this.uiScale, map: this.mapScale, smooth: this.smooth }),
+        JSON.stringify({
+          ui: this.uiScale,
+          map: this.mapScale,
+          smooth: this.smooth,
+          globe: this.globe,
+        }),
       );
     } catch {
       // No storage: the scales last until the page is closed.
@@ -907,6 +927,7 @@ export class EventLoopDOM extends EventLoop {
     gfx.setMapZoom(Math.fround(this.mapScale * this.zoomFactor));
     gfx.setMapScale(this.mapScale);
     gfx.setMapSmooth(this.smooth);
+    gfx.setMapGlobe(this.globe);
 
     const [width, height] = gfx.getLogicalSize();
     this.notifyResize(width, height);

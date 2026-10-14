@@ -119,6 +119,8 @@ export class NetGameInfo extends GameInfo {
       busyRoads: setup.rules.busyRoads,
       // EXT: trading between players.
       trading: setup.rules.trading,
+      // EXT: the computer players.
+      aiLevel: setup.rules.aiLevel,
     };
   }
 

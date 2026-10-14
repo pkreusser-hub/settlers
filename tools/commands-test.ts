@@ -83,7 +83,7 @@ function attackScene(stockPreset: number, peaceMinutes: number, teams: number[])
     info.setDefaultColors();
     info.getPlayer(0).setTeam(teams[0]);
     info.getPlayer(1).setTeam(teams[1]);
-    info.setRules({ stockPreset, peaceMinutes, busyRoads: false, trading: false });
+    info.setRules({ stockPreset, peaceMinutes, busyRoads: false, trading: false, aiLevel: 0 });
     const game = info.instantiate()! as any;
     game.rnd = new Random(0x1234, 0x5678, 0x9abc);
     const map = game.getMap();
@@ -138,7 +138,7 @@ function tradeScene(trading: boolean): any {
   info.addPlayer(12, { red: 0, green: 0, blue: 0 }, 40, 40, 40);
   info.addPlayer(13, { red: 0, green: 0, blue: 0 }, 40, 40, 40);
   info.setDefaultColors();
-  info.setRules({ stockPreset: 0, peaceMinutes: 0, busyRoads: false, trading });
+  info.setRules({ stockPreset: 0, peaceMinutes: 0, busyRoads: false, trading, aiLevel: 0 });
   const game = info.instantiate()! as any;
   game.rnd = new Random(0x1234, 0x5678, 0x9abc);
   const map = game.getMap();

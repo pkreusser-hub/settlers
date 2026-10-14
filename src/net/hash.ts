@@ -182,6 +182,13 @@ export function stateHash(game: Game): number {
     }
     // EXT: busy roads, only when on.
     if (rules.busyRoads) mix(0x45585432); /* 'EXT2' */
+    // EXT: the computer players, only when not the original. What they
+    // decide is in the state they change (caps, stances, rally points,
+    // offers), which is mixed in elsewhere.
+    if (rules.aiLevel !== 0) {
+      mix(0x45585437); /* 'EXT7' */
+      mix(rules.aiLevel);
+    }
     // EXT: trading, only when on: the offers and the shipments under way.
     if (rules.trading) {
       mix(0x45585434); /* 'EXT4' */

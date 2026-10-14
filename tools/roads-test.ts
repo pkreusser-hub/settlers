@@ -152,7 +152,7 @@ function makeScene(busyRoads: boolean, lengths: number[]): Scene | null {
   info.removeAllPlayers();
   info.addPlayer(12, { red: 0, green: 0, blue: 0 }, 40, 40, 40);
   info.setDefaultColors();
-  info.setRules({ stockPreset: 0, peaceMinutes: 0, busyRoads, trading: false });
+  info.setRules({ stockPreset: 0, peaceMinutes: 0, busyRoads, trading: false, aiLevel: 0 });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const game = info.instantiate()! as any;
   game.setRandom(new Random('3183215728814883'));
@@ -539,7 +539,7 @@ function longRun(busyRoads: boolean): LongRun {
   const faces = [9, 7, 5, 2];
   for (let i = 0; i < 4; i++) info.addPlayer(faces[i], { red: 0, green: 0, blue: 0 }, 40, 40, 40);
   info.setDefaultColors();
-  info.setRules({ stockPreset: 0, peaceMinutes: 0, busyRoads, trading: false });
+  info.setRules({ stockPreset: 0, peaceMinutes: 0, busyRoads, trading: false, aiLevel: 0 });
   const game = info.instantiate()!;
   game.setRandom(new Random('3183215728814883'));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

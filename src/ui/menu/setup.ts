@@ -13,6 +13,8 @@ import {
   Game,
   GAME_MAX_PLAYER_COUNT,
   PEACE_MINUTES_CHOICES,
+  AI_LEVEL_IMPROVED,
+  AI_LEVEL_ORIGINAL,
   STOCK_NORMAL,
   STOCK_POOR,
   STOCK_RICH,
@@ -72,6 +74,8 @@ export interface GameOptions {
   busyRoads: boolean;
   /* EXT: trading between players. */
   trading: boolean;
+  /* EXT: the computer players: AI_LEVEL_ORIGINAL or AI_LEVEL_IMPROVED. */
+  aiLevel: number;
 }
 
 const MAP_SIZE_MIN = 3;
@@ -94,6 +98,7 @@ export class SetupModel {
     peaceMinutes: 0,
     busyRoads: false,
     trading: false,
+    aiLevel: AI_LEVEL_ORIGINAL,
   };
 
   constructor(readonly online: OnlineHostHooks | null) {
@@ -569,6 +574,23 @@ function gameOptionsSection(model: SetupModel): Widget {
     'Players offer each other goods from a castle or storehouse, as a gift or a swap. ' +
     'The goods travel for a while.');
 
+  /* EXT: game/ai-ext.ts. */
+  const aiLevel = segmented<number>({
+    label: 'Computer players',
+    options: [
+      { value: AI_LEVEL_ORIGINAL, label: 'Original' },
+      { value: AI_LEVEL_IMPROVED, label: 'Improved' },
+    ],
+    get: () => options.aiLevel,
+    set: (value) => {
+      options.aiLevel = value;
+      update();
+    },
+  });
+  const aiLevelText = hint(
+    'Improved computer players also upgrade border buildings, cap goods that pile up, ' +
+    'attack only when the odds are good and offer trades.');
+
   /* Game.updateTeamWinner() and Game.updateWinner(). */
   const teamText = hint('');
   const problem = el('p', 'su-team-problem');
@@ -582,6 +604,7 @@ function gameOptionsSection(model: SetupModel): Widget {
     peace.update?.();
     busyRoads.update?.();
     trading.update?.();
+    aiLevel.update?.();
     const [none, a, b] = model.teams();
     const key = `${options.stockPreset}|${options.peaceMinutes}|${none}|${a}|${b}`;
     if (key === shown) return;
@@ -611,6 +634,7 @@ function gameOptionsSection(model: SetupModel): Widget {
   const root = section('Game options', stock, stockText, peace, peaceText,
     busyRoads, busyRoadsText,
     trading, tradingText,
+    aiLevel, aiLevelText,
     el('div', 'mk-label su-team-title', 'Teams'), teamText, problem);
   return { el: root.el, update };
 }

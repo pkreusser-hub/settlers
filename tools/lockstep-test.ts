@@ -1112,9 +1112,10 @@ function main(): void {
   {
     const setup = makeTestSetup(2, 4, '8667715887436237', '3183215728814883');
     check(setup.rules.stockPreset === 0 && setup.rules.peaceMinutes === 0 && setup.rules.busyRoads === false &&
-      setup.rules.trading === false && setup.players.every((p) => p.team === 0),
+      setup.rules.trading === false && setup.rules.aiLevel === 0 && setup.players.every((p) => p.team === 0),
       'a setup made without options has the defaults and no teams');
-    setup.rules = { stockPreset: 1, peaceMinutes: 10, busyRoads: true, trading: true };
+    // EXT: with the improved computer players (aiLevel 1).
+    setup.rules = { stockPreset: 1, peaceMinutes: 10, busyRoads: true, trading: true, aiLevel: 1 };
     [1, 2, 1, 2].forEach((team, i) => { setup.players[i].team = team; });
     const wire = JSON.parse(JSON.stringify(setup)) as GameSetup;
     check(isValidSetup(wire), 'the setup with options and teams is valid after JSON');
@@ -1133,6 +1134,9 @@ function main(): void {
       bad((c) => { delete (c.rules as unknown as { busyRoads?: boolean }).busyRoads; }) &&
       bad((c) => { (c.rules as unknown as { trading: unknown }).trading = 1; }) &&
       bad((c) => { delete (c.rules as unknown as { trading?: boolean }).trading; }) &&
+      bad((c) => { c.rules.aiLevel = 2; }) && bad((c) => { c.rules.aiLevel = -1; }) &&
+      bad((c) => { (c.rules as unknown as { aiLevel: unknown }).aiLevel = true; }) &&
+      bad((c) => { delete (c.rules as unknown as { aiLevel?: number }).aiLevel; }) &&
       bad((c) => { (c as unknown as { rules: unknown }).rules = null; }) &&
       bad((c) => { delete (c as unknown as { rules?: unknown }).rules; }),
       'options that do not exist, or none at all, are refused');
@@ -1141,7 +1145,7 @@ function main(): void {
     const same = match.sides.every((side) => {
       const g = side.game;
       return g.getRules().stockPreset === 1 && g.getRules().peaceMinutes === 10 && g.getRules().busyRoads &&
-        g.getRules().trading &&
+        g.getRules().trading && g.getRules().aiLevel === 1 &&
         [1, 2, 1, 2].every((team, i) => g.getPlayer(i)!.getTeam() === team) &&
         g.isAllied(0, 2) && g.isAllied(1, 3) && !g.isAllied(0, 1);
     });

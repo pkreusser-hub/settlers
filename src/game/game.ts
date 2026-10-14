@@ -100,7 +100,14 @@ export interface GameRules {
   busyRoads: boolean;
   // EXT: trading between players, see trade.ts.
   trading: boolean;
+  // EXT: the computer players, see ai-ext.ts: AI_LEVEL_ORIGINAL or
+  // AI_LEVEL_IMPROVED.
+  aiLevel: number;
 }
+
+/* EXT: the levels of the computer players (GameRules.aiLevel). */
+export const AI_LEVEL_ORIGINAL = 0;
+export const AI_LEVEL_IMPROVED = 1;
 
 export function isValidTeam(v: unknown): v is number {
   return v === TEAM_NONE || v === TEAM_A || v === TEAM_B;
@@ -114,7 +121,8 @@ export function isValidGameRules(v: unknown): v is GameRules {
          typeof rules.peaceMinutes === 'number' &&
          PEACE_MINUTES_CHOICES.includes(rules.peaceMinutes) &&
          typeof rules.busyRoads === 'boolean' &&
-         typeof rules.trading === 'boolean';
+         typeof rules.trading === 'boolean' &&
+         (rules.aiLevel === AI_LEVEL_ORIGINAL || rules.aiLevel === AI_LEVEL_IMPROVED);
 }
 
 const GROUND_ANALYSIS_RADIUS = 25;
@@ -280,6 +288,9 @@ export class Game {
   // and the shipments under way are in `trade` (trade.ts).
   protected trading = false;
   readonly trade: Trade = new Trade(this);
+  // EXT: the level of the computer players. Saved as "ai_level" when not
+  // AI_LEVEL_ORIGINAL.
+  protected aiLevel = AI_LEVEL_ORIGINAL;
 
   /* Work fields of the computer players. */
   protected aiGame: GameAIFields;
@@ -419,7 +430,13 @@ export class Game {
 
   getRules(): GameRules {
     return { stockPreset: this.stockPreset, peaceMinutes: this.peaceMinutes,
-             busyRoads: this.busyRoads, trading: this.trading };
+             busyRoads: this.busyRoads, trading: this.trading, aiLevel: this.aiLevel };
+  }
+
+  /* EXT: the level a computer player plays at (GameRules.aiLevel; the same
+     for all of them). */
+  getAiLevelOf(_playerIndex: number): number {
+    return this.aiLevel;
   }
 
   /* EXT: whether players may trade goods (GameRules.trading). */
@@ -441,6 +458,7 @@ export class Game {
     this.peaceMinutes = rules.peaceMinutes;
     this.busyRoads = rules.busyRoads;
     this.trading = rules.trading;
+    this.aiLevel = rules.aiLevel;
   }
 
   /* Ticks until attacks are allowed, 0 when they are. */
@@ -3357,6 +3375,9 @@ export class Game {
         // EXT: trading; written only when on.
         trading: gameReader.hasValue('trading') &&
                  gameReader.value('trading').readInt() !== 0,
+        // EXT: the computer players; written only when not the original.
+        aiLevel: gameReader.hasValue('ai_level')
+          ? gameReader.value('ai_level').readInt() : AI_LEVEL_ORIGINAL,
       });
     }
     // EXT: the offers and shipments of the trade; a save without them has
@@ -3519,6 +3540,8 @@ export class Game {
     if (this.busyRoads) writer.value('busy_roads').write(1);
     // EXT: trading, only when on.
     if (this.trading) writer.value('trading').write(1);
+    // EXT: the computer players, only when not the original.
+    if (this.aiLevel !== AI_LEVEL_ORIGINAL) writer.value('ai_level').write(this.aiLevel);
     writer.value('map.gold_morale_factor').write(this.mapGoldMoraleFactor);
     writer.value('player_score_leader').write(
       ((this.landLeader >= 0 ? BIT(this.landLeader) : 0) |

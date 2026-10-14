@@ -133,7 +133,7 @@ function buildScene(attempt: number): Scene | null {
   info.addPlayer(12, { red: 0, green: 0, blue: 0 }, 40, 40, 40);
   info.addPlayer(13, { red: 0, green: 0, blue: 0 }, 40, 40, 40);
   info.setDefaultColors();
-  info.setRules({ stockPreset: 0, peaceMinutes: 0, busyRoads: false, trading: false });
+  info.setRules({ stockPreset: 0, peaceMinutes: 0, busyRoads: false, trading: false, aiLevel: 0 });
   const game = info.instantiate()! as any;
   game.rnd = new Random(0x1234, 0x5678, 0x9abc);
   const map = game.getMap();
@@ -320,7 +320,7 @@ function castleScene(): CastleScene {
   info.removeAllPlayers();
   info.addPlayer(12, { red: 0, green: 0, blue: 0 }, 40, 40, 40);
   info.setDefaultColors();
-  info.setRules({ stockPreset: 0, peaceMinutes: 0, busyRoads: false, trading: false });
+  info.setRules({ stockPreset: 0, peaceMinutes: 0, busyRoads: false, trading: false, aiLevel: 0 });
   const game = info.instantiate()! as any;
   game.rnd = new Random(0x1234, 0x5678, 0x9abc);
   const map = game.getMap();
@@ -940,7 +940,7 @@ print(`\n8. four computer players, ${longUpdates} updates, scripted stance and r
     const faces = [9, 7, 5, 2];
     for (let i = 0; i < 4; i++) info.addPlayer(faces[i], { red: 0, green: 0, blue: 0 }, 40, 40, 40);
     info.setDefaultColors();
-    info.setRules({ stockPreset: 0, peaceMinutes: 0, busyRoads: false, trading: false });
+    info.setRules({ stockPreset: 0, peaceMinutes: 0, busyRoads: false, trading: false, aiLevel: 0 });
     const game = info.instantiate()! as any;
     game.setRandom(new Random('3183215728814883'));
 

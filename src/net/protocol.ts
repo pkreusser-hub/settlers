@@ -6,7 +6,7 @@ import type { Command } from './command';
 
 // Bumped whenever the messages, the lockstep constants or the simulation
 // change in a way that two different builds could not play together.
-export const PROTOCOL_VERSION = 8;
+export const PROTOCOL_VERSION = 9;
 
 // Most human players of a game (the game has four players).
 export const MAX_HUMANS = 4;
@@ -70,7 +70,11 @@ export interface GameSetup {
   humans: number;
   players: NetPlayer[];
   // EXT: the game options (GameRules of game.ts).
-  rules: { stockPreset: number; peaceMinutes: number; busyRoads: boolean; trading: boolean };
+  rules: {
+    stockPreset: number; peaceMinutes: number; busyRoads: boolean; trading: boolean;
+    // EXT: the level of the computer players (GameRules.aiLevel).
+    aiLevel: number;
+  };
 }
 
 // Why the host does not take a guest.

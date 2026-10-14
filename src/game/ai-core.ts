@@ -45,6 +45,8 @@ import {
   MAP_TYPE_UP, PLAYER_HAS_CASTLE, PLAYER_IS_ACTIVE, PLAYER_IS_AI, PLAYER_NUM,
   SERF_PLAYER, SERF_TYPE, aiGame, pendingGet, pendingSet, statGet, statSet,
 } from './ai-internal';
+// EXT: the improved computer players (GameRules.aiLevel).
+import * as Ext from './ai-ext';
 import * as Manage from './ai-manage';
 import * as Rate from './ai-rate';
 import * as Road from './ai-road';
@@ -1490,7 +1492,8 @@ export function update(player: Player): void {
     return;
   }
 
-  switch ((ai.counter & 0x78) >> 3) {
+  const slot = (ai.counter & 0x78) >> 3;
+  switch (slot) {
     case 0: updateSettings(player); break;
     case 1: case 5: case 9: case 13:
       updateBuildingStats(player);
@@ -1503,4 +1506,7 @@ export function update(player: Player): void {
     case 7: case 15: connectRoads(player); break;
     case 8: Manage.validateLocations(player); break;
   }
+
+  // EXT: the improved computer players use the rules the port added.
+  if (Ext.isImproved(player)) Ext.afterStep(player, slot);
 }

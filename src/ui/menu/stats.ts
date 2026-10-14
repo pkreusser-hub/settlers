@@ -348,6 +348,11 @@ function stat8Page(ctx: BoxContext): BoxView {
       label: 'Trading between players',
       get: () => (rules.trading ? 'On' : 'Off'),
     }),
+    // EXT: the computer players.
+    numberRow({
+      label: 'Computer players',
+      get: () => (rules.aiLevel === 0 ? 'Original' : 'Improved'),
+    }),
   ];
 
   win.add(

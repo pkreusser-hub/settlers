@@ -36,6 +36,27 @@ the building-spots overlay (key B), the Smooth picture filter and
 the size of the panel and boxes. The mouse wheel or `[` and `]` zoom the map;
 Ctrl+wheel resizes the panel.
 
+The View group of the strip shows more on the map. Each button has a key:
+
+- Land (T) fills each player's land and draws its border. Yours is filled evenly
+  with a solid border, the others are striped with a dashed border. In a game with
+  teams a second press shows your team, the enemy teams and the players without a team.
+- Traffic (Y) marks your roads as quiet (thin line), steady (medium) or congested (thick).
+- Status (X, on at the start) puts one badge over a building of yours that is paused,
+  has reached its output cap, is being upgraded, has no worker yet, waits for
+  materials, or is a military building with no knight inside. Point at a badge to read it.
+- Minimap (N) shows or hides a map of the whole world in the bottom right corner:
+  terrain, land by player or team, buildings, the frame of the view, a ring where you
+  are attacked and the markers of online players. Click or drag in it to move the view.
+  Drag its top left corner or press − and + to resize it. With the focus on it the
+  arrow keys move the view and Home goes to your castle.
+- Legend keeps the list of what the fills, lines and badges mean on the page.
+
+The original map window (the map button of the panel) works as before.
+
+The browser remembers these choices, the zoom, the panel size, Smooth, Spots, sound and
+music, the message options, the autosave interval and whether the stock panel is open.
+
 ## Online play
 
 One player chooses Host online game and gets a six-character room code. Up to three
@@ -110,9 +131,11 @@ None of these change a game that does not use them.
   join. If the receiver has no castle or storehouse left the goods travel back,
   and they are lost if the sender has none either. A player whose castle has
   fallen cannot trade. Allies and enemies trade alike. A computer player takes
-  every gift, never makes an offer, and accepts a swap only if you ask for no
+  every gift and accepts a swap only if you ask for no
   weapon or tool, for at most twice what you give, and for goods it has plenty
-  of. A message tells you about an offer, its answer and the goods that arrive.
+  of. Original computer players never make an offer; improved ones do (see
+  Computer players below). A message tells you about an offer, its answer and
+  the goods that arrive.
 - Pause a building: its worker stays in but makes nothing.
 - Output cap: a building stops when the stock of what it makes reaches the
   number you set, and starts again when the stock falls.
@@ -120,7 +143,47 @@ None of these change a game that does not use them.
   keeps its knights and its land while planks and stones arrive. A hut needs
   room for a large building. A building that the enemy takes loses its upgrade.
 
-Pause, cap and upgrade are in the window of the building.
+- Attack forecast: before you send knights, the attack window shows which of
+  your knights would go and their ranks, how many knights defend the building
+  (their ranks do not show), the morale of both sides, and an estimate:
+  Likely win, Even or Likely loss. The estimate uses the rule of the duels and
+  averages over the ranks the defenders may have. It counts only the knights
+  that are there now.
+- Stance: a guard hut, tower or fortress is on Normal or on Hold. On Hold it
+  keeps a full garrison (3, 6 or 12 knights) whatever the knight sliders say,
+  and gives no knight to an attack.
+- Rally point: you can make one of your guard huts, towers or fortresses your
+  rally point. It wants a full garrison. While it has room, a knight that
+  another of your buildings asks for goes to the rally point instead; a
+  building with no knight at all still gets its first one, and so does any
+  building when no knight can reach the rally point. An attack takes its
+  knights from the rally point first, then from the nearest buildings as
+  before. The rally point is cleared when the building is demolished, burns or
+  is captured. A building cannot be on Hold and the rally point at once.
+
+Pause, cap, upgrade, stance and rally point are in the window of the building.
+
+- Computer players: Original or Improved, chosen in the game setup; Original
+  is the default and plays exactly as before. Improved computer players also:
+  - upgrade one border building facing an enemy at a time, when their stores
+    hold the cost plus 20 planks and 15 stones, and not during the emergency
+    program;
+  - cap producers whose goods pile up (at 20 lumber, 100 planks, 50 stones,
+    100 coal, iron ore or steel, 50 fish, meat, bread or wheat, 20 flour or
+    pigs, 10 boats) and lift the cap when the store falls below half that;
+    gold is never capped. They pause the toolmaker while they want no
+    tool;
+  - build instead of planning attacks during the peace, and fill the
+    buildings next to an enemy in its last two minutes;
+  - attack only when the attack forecast of the knights that would go is at
+    least 6 in 10, and send the fewest knights that give 7.5 in 10 (or all);
+  - put up to two border buildings on Hold when the enemy knights within 16
+    steps outnumber a full garrison, and make their strongest border building
+    facing their main enemy the rally point; both follow the front;
+  - with trading on, offer 6 of a clear surplus for 4 of planks, stone, coal,
+    iron ore, steel or food they have fewer than 5 of: to an ally if they
+    have one, else to anyone, one open offer at a time, at most in one minute
+    of every four, never weapons or tools.
 
 ## Save and load
 

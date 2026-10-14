@@ -82,7 +82,7 @@ function makeGame(faces: number[], trading: boolean, supplies = 40): Game {
   info.removeAllPlayers();
   for (const face of faces) info.addPlayer(face, { red: 0, green: 0, blue: 0 }, 40, supplies, 40);
   info.setDefaultColors();
-  info.setRules({ stockPreset: 0, peaceMinutes: 0, busyRoads: false, trading });
+  info.setRules({ stockPreset: 0, peaceMinutes: 0, busyRoads: false, trading, aiLevel: 0 });
   const game = info.instantiate()!;
   game.setRandom(new Random('3183215728814883'));
   return game;

@@ -23,6 +23,8 @@
 // they are the exported functions of this module.
 
 import * as Core from './ai-core';
+// EXT: the improved computer players (GameRules.aiLevel).
+import * as Ext from './ai-ext';
 import {
   AI_BUILDING, AI_CAN_BUILD_NONE, AI_CURSOR_POS, AI_FLAG, AI_GAME, AI_SERF,
   BUILDING_ALLOCATED, BUILDING_HAS_SERF, BUILDING_IS_ACTIVE,
@@ -586,13 +588,22 @@ export function attack(player: Player): void {
   // EXT: no attack during the peace; the turn goes to the site scan, as it
   // does when the player decides against an attack.
   if (AI_GAME().isPeace()) {
+    // EXT: the improved computer player builds in the turn it has no use
+    // for: one more step of the economy.
+    if (Ext.isImproved(player)) {
+      Core.wantAndBuild(player);
+      return;
+    }
     Core.scanSites(player);
     return;
   }
 
   const ratio = player.ai.militaryRatio & 0xffff;
 
-  if (ratio < 0x8000) {
+  // EXT: the improved computer player rolls no dice here: it looks for a
+  // target in every attack turn and lets the attack forecast decide (see
+  // attackKnights() in ai-ext.ts below).
+  if (ratio < 0x8000 && !Ext.isImproved(player)) {
     let d0: number;
     if (ratio >= 0x2000) {
       d0 = (ratio - 0x2000) * 2 + 0x1000;
@@ -806,6 +817,16 @@ export function attack(player: Player): void {
 
     /* Attack (0x2a15e). */
     player.knightsAvailableForAttack(AI_CURSOR_POS(player));
+
+    // EXT: the improved computer player asks the attack forecast in place
+    // of the estimate of the original below.
+    if (Ext.isImproved(player)) {
+      const send = Ext.attackKnights(player, AI_BUILDING(player.buildingAttacked));
+      if (send === 0 || player.attackingBuildingCount === 0) return;
+      player.knightsAttacking = send;
+      player.startAttack();
+      return;
+    }
 
     /* Defenders of the target, weighted 1 << knight level. */
     target = AI_BUILDING(player.buildingAttacked);

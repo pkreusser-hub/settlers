@@ -98,6 +98,46 @@ export class Collection<T extends GameObject> implements Iterable<T> {
     return this.objects.length - this.freeObjectIndexes.length;
   }
 
+  // EXT: the free indexes in the order allocate() takes them. A running
+  // game frees them in the order objects are erased; a load rebuilds them in
+  // ascending order (getOrInsert) and has no free slots past the last
+  // object (erase() pops only the last index), so a game loaded from a save
+  // would reuse another index than the game that went on. Saved only when
+  // the list is not what a load rebuilds (setFreeOrder restores it).
+  getFreeIndexes(): readonly number[] {
+    return this.freeObjectIndexes;
+  }
+
+  freeOrderIsAscending(): boolean {
+    if (this.objects.length > 0 && this.objects[this.objects.length - 1] == null) {
+      return false;
+    }
+    for (let i = 1; i < this.freeObjectIndexes.length; i++) {
+      if (this.freeObjectIndexes[i - 1] > this.freeObjectIndexes[i]) return false;
+    }
+    return true;
+  }
+
+  // EXT: after a load. Free slots past the last object come back; the order
+  // is ignored unless it then names exactly the free indexes.
+  setFreeOrder(order: number[]): void {
+    for (const index of order) {
+      if (!Number.isInteger(index) || index < 0 || index > 0xffff) return;
+    }
+    const top = order.length > 0 ? Math.max(...order) : -1;
+    while (this.objects.length <= top) {
+      this.freeObjectIndexes.push(this.objects.length);
+      this.objects.push(null);
+    }
+    if (order.length !== this.freeObjectIndexes.length) return;
+    const a = [...order].sort((x, y) => x - y);
+    const b = [...this.freeObjectIndexes].sort((x, y) => x - y);
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i] || this.objects[a[i]] != null) return;
+    }
+    this.freeObjectIndexes = [...order];
+  }
+
   // One past the highest index in use (the original's max_*_index).
   getMaxIndex(): number {
     return this.objects.length;

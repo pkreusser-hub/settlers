@@ -15,6 +15,8 @@
 //     (state that is not in the file shows here; reported, not required).
 
 import { Game } from '../src/game/game';
+import { Collection } from '../src/game/objects';
+import { Serf } from '../src/game/serf';
 import { GameInfo } from '../src/game/mission';
 import { Random } from '../src/game/random';
 import { GameStore } from '../src/game/savegame';
@@ -77,6 +79,45 @@ const info = ext ? extInfo() : GameInfo.getMission(mission)!;
 const game = info.instantiate()!;
 (game as unknown as { rnd: Random }).rnd = new Random(0x1234, 0x5678, 0x9abc);
 
+// EXT (free index order): a pool that frees y then x (new indexes, x < y)
+// and then z, the last index, which leaves x and y as free slots past the
+// last object, hands out y before x, also after a save and a load.
+{
+  const g = (ext ? extInfo() : GameInfo.getMission(mission)!).instantiate()!;
+  for (let i = 0; i < 1000; i++) g.update();
+  const serfs = (g as unknown as { serfs: Collection<Serf> }).serfs;
+  /* Serfs that are on no map position and in no list: nothing else sees them. */
+  /* Take the free slots first, so that x, y and z are new indexes at the end. */
+  const refill: number[] = [];
+  while (serfs.getFreeIndexes().length > 0) refill.push(serfs.allocate().getIndex());
+  const x = serfs.allocate().getIndex();
+  const y = serfs.allocate().getIndex();
+  const z = serfs.allocate().getIndex();
+  for (const i of refill) serfs.erase(i);
+  serfs.erase(y);
+  serfs.erase(x);
+  serfs.erase(z);
+  const loaded = load(store.write(g));
+  const pool = (loaded as unknown as { serfs: Collection<Serf> }).serfs;
+  const hashSame = stateHash(g) === stateHash(loaded);
+  const shown = `original ${serfs.getFreeIndexes().join(',')}, loaded ${pool.getFreeIndexes().join(',')}`;
+  const free = serfs.getFreeIndexes();
+  let ok = hashSame && free.join(',') === pool.getFreeIndexes().join(',') &&
+    free.indexOf(y) >= 0 && free.indexOf(y) < free.indexOf(x) && free.indexOf(z) < 0;
+  /* Both pools hand out the same indexes, z (the old last index) at the end. */
+  const n = free.length + 1;
+  const handed: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const i1 = serfs.allocate().getIndex();
+    const i2 = pool.allocate().getIndex();
+    if (i1 !== i2) ok = false;
+    handed.push(i1);
+  }
+  if (handed[n - 1] !== z) ok = false;
+  if (!ok) failed = true;
+  console.log(`free index order after a load: ${shown} ${ok ? 'ok' : 'DIFFER'}`);
+}
+
 const points = 4;
 for (let p = 1; p <= points; p++) {
   for (let i = 0; i < updates / points; i++) game.update();
@@ -88,6 +129,20 @@ for (let p = 1; p <= points; p++) {
   if (!roundTrip) failed = true;
 
   const b = load(text);
+  // EXT (free index order): the loaded game takes free indexes in the order
+  // the original would, or it reuses another index of a flag, building or
+  // serf than the game that went on (found in the TEAMS game of ai-test).
+  const pools = (g: Game): string => g.extPools()
+    .map(([name, pool]) => `${name} ${pool.getFreeIndexes().join(' ')}`).join('; ');
+  const freeSame = pools(game) === pools(a) && pools(game) === pools(b);
+  if (!freeSame) {
+    failed = true;
+    console.log(`  free indexes DIFFER:
+    original: ${pools(game)}
+    loaded:   ${pools(a)}`);
+  }
+  const unordered = game.extPools().filter(([, pool]) => !pool.freeOrderIsAscending()).length;
+  console.log(`  free indexes ${freeSame ? 'same' : 'DIFFER'} (${unordered} pools out of ascending order)`);
   // EXT (game options and teams): they come back from the file.
   if (ext) {
     const want = `stock ${extRules.stockPreset}, peace ${extRules.peaceMinutes}, busy roads on, trading on, computer players ${extRules.aiLevel}, teams ${extTeams.join('')}`;

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Caravan preview</title>
+<style>
+  body { margin: 0; padding: 16px; background: #1d1a14; color: #e8dcb4; font: 14px system-ui, sans-serif; }
+  h2 { font-size: 15px; margin: 18px 0 6px; font-weight: 600; }
+  .row { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+  .cell { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; color: #b8ac88; }
+  canvas { image-rendering: pixelated; }
+  .grass { background: #3f7a2a; padding: 6px; border-radius: 4px; }
+  #road { background: #3f7a2a; width: 100%; max-width: 900px; height: 150px; position: relative; overflow: hidden; border-radius: 4px; }
+</style>
+</head>
+<body>
+<h2>Walking, at the game's 3x zoom</h2>
+<div id="road"></div>
+<h2>Frames at 4x: side (right), side (left), front (down), back (up)</h2>
+<div id="frames"></div>
+<h2>Player colours, 2x</h2>
+<div class="row" id="colours"></div>
+<h2>Actual size</h2>
+<div class="row grass" id="actual"></div>
+<script type="module">
+import { caravanSprite, CARAVAN_FRAMES } from '../src/ui/art/caravan.ts';
+const blue = { red: 0x00, green: 0xe3, blue: 0xe3 };
+const colours = [blue, { red: 0xcf, green: 0x63, blue: 0x63 }, { red: 0xdf, green: 0x7f, blue: 0xef }, { red: 0xef, green: 0xef, blue: 0x8f }];
+const scaled = (cv, s) => { const c = document.createElement('canvas'); c.width = cv.width * s; c.height = cv.height * s;
+  const x = c.getContext('2d'); x.imageSmoothingEnabled = false; x.drawImage(cv, 0, 0, c.width, c.height); return c; };
+const frames = document.getElementById('frames');
+for (const [view, mirror, label] of [['side', false, 'side right'], ['side', true, 'side left'], ['front', false, 'front'], ['back', false, 'back']]) {
+  const row = document.createElement('div'); row.className = 'row grass'; row.style.marginBottom = '8px';
+  for (let f = 0; f < CARAVAN_FRAMES; f++) {
+    const cell = document.createElement('div'); cell.className = 'cell';
+    cell.append(scaled(caravanSprite(view, f, blue, mirror), 4), `${label} ${f + 1}`);
+    row.append(cell);
+  }
+  frames.append(row);
+}
+const cols = document.getElementById('colours');
+for (const c of colours) { const d = document.createElement('div'); d.className = 'grass'; d.append(scaled(caravanSprite('side', 0, c), 2)); cols.append(d); }
+const act = document.getElementById('actual');
+for (const v of ['side', 'front', 'back']) act.append(caravanSprite(v, 0, blue));
+/* the walk */
+const road = document.getElementById('road');
+const cv = document.createElement('canvas'); road.append(cv);
+const ctx = cv.getContext('2d');
+let x = -200, t = 0;
+function tick() {
+  cv.width = road.clientWidth; cv.height = road.clientHeight; ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = '#8a6a3a'; ctx.fillRect(0, 110, cv.width, 16);
+  const f = Math.floor(t / 8) % CARAVAN_FRAMES;
+  const s = caravanSprite('side', f, blue);
+  ctx.drawImage(s, Math.round(x), 120 - s.height * 3, s.width * 3, s.height * 3);
+  x += 1; t++; if (x > cv.width) x = -200;
+  requestAnimationFrame(tick);
+}
+tick();
+</script>
+</body>
+</html>

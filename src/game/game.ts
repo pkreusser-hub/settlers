@@ -38,6 +38,7 @@ import {
   u32,
 } from './misc';
 import { Collection } from './objects';
+import type { GameObject } from './objects';
 import { Random } from './random';
 import { ResourceType } from './resource';
 import {
@@ -3459,6 +3460,21 @@ export class Game {
       this.map.setObjIndex(flag.getPosition(), flag.getIndex());
     }
 
+    // EXT: the order of the free indexes of each pool, written only when it
+    // is not the ascending order a load gives anyway.
+    for (const [name, pool] of this.extPools()) {
+      const key = 'ext_free_' + name;
+      if (!gameReader.hasValue(key)) continue;
+      const value = gameReader.value(key);
+      const order: number[] = [];
+      if (value.size() === 0) {
+        order.push(value.readInt());
+      } else {
+        for (let i = 0; i < value.size(); i++) order.push(value.at(i).readInt());
+      }
+      pool.setFreeOrder(order);
+    }
+
     this.gameSpeed = 0;
     this.gameSpeedSave = DEFAULT_GAME_SPEED;
 
@@ -3498,6 +3514,13 @@ export class Game {
     for (const building of this.buildings) {
       building.setThreatLevel(threatLevels.get(building.getIndex()) ?? 0);
     }
+  }
+
+  // EXT: the pools whose free indexes go to the save, in a fixed order.
+  extPools(): [string, Collection<GameObject>][] {
+    return [['players', this.players], ['flags', this.flags],
+            ['buildings', this.buildings], ['inventories', this.inventories],
+            ['serfs', this.serfs]] as [string, Collection<GameObject>][];
   }
 
   // operator << (SaveWriterText &writer, Game &game)
@@ -3542,6 +3565,13 @@ export class Game {
     if (this.trading) writer.value('trading').write(1);
     // EXT: the computer players, only when not the original.
     if (this.aiLevel !== AI_LEVEL_ORIGINAL) writer.value('ai_level').write(this.aiLevel);
+    // EXT: the order of the free indexes, only when not ascending (see
+    // Collection.getFreeIndexes).
+    for (const [name, pool] of this.extPools()) {
+      if (pool.freeOrderIsAscending()) continue;
+      const value = writer.value('ext_free_' + name);
+      for (const index of pool.getFreeIndexes()) value.write(index);
+    }
     writer.value('map.gold_morale_factor').write(this.mapGoldMoraleFactor);
     writer.value('player_score_leader').write(
       ((this.landLeader >= 0 ? BIT(this.landLeader) : 0) |

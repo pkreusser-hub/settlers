@@ -21,6 +21,7 @@
  * along with freeserf.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+import { caravanWalks } from './ui/caravan-layer';
 import { GameManager } from './game/game-manager';
 // The colours of every overlay of the page.
 import './ui/menu/theme.css';
@@ -120,7 +121,7 @@ async function main(): Promise<boolean> {
 
   // Dev console handle, for poking at the running game.
   if (import.meta.env.DEV) {
-    (window as unknown as Record<string, unknown>).settlers = { iface, gameManager };
+    (window as unknown as Record<string, unknown>).settlers = { iface, gameManager, caravans: caravanWalks };
   }
 
   /* Settings of the last run; -f asks for fullscreen in any case. */

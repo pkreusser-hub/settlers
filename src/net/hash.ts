@@ -10,6 +10,7 @@ interface Hashable {
   gameSpeed: number;
   rnd: { toString(): string };
   initMapRnd: { toString(): string };
+  extPools(): [string, { freeOrderIsAscending(): boolean; getFreeIndexes(): readonly number[] }][];
   players: Iterable<{
     getIndex(): number;
     totalLandArea: number;
@@ -84,6 +85,15 @@ export function stateHash(game: Game): number {
   mix(g.gameSpeed);
   mixString(g.rnd.toString());
   mixString(g.initMapRnd.toString());
+
+  // EXT: the order of the free indexes of the pools, only where it is not
+  // ascending (a game loaded from a save has the same order; see
+  // Collection.getFreeIndexes), so that other games hash as before.
+  for (const [, pool] of g.extPools()) {
+    if (pool.freeOrderIsAscending()) continue;
+    mix(0x45585437); /* 'EXT7' */
+    for (const index of pool.getFreeIndexes()) mix(index);
+  }
 
   for (const p of g.players) {
     mix(p.getIndex());

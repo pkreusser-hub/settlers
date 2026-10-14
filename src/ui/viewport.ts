@@ -34,6 +34,7 @@ import { mapBuildingSprite } from './interface';
 import type { Interface } from './interface';
 import { drawBadges, drawTerritory, drawTraffic, dropTerritoryTiles, fillGrid } from './map-overlays';
 import type { OverlayGrid } from './map-overlays';
+import { caravanWalks, drawCaravans } from './caravan-layer';
 import { PixelScaler } from './pixel-scale';
 import { PopupBoxType } from './popup';
 import { prefBool, prefSetBool } from './prefs';
@@ -665,6 +666,8 @@ export class Viewport extends GuiObject implements MapHandler {
       this.frame = gfx.createFrame(this.width, this.height, 1);
     }
 
+    /* EXT (trading): a caravan walks between the ticks of the game. */
+    if (caravanWalks.length > 0) this.redraw = true;
     if (this.redraw) {
       this.internalDraw();
       this.redraw = false;
@@ -2622,6 +2625,10 @@ export class Viewport extends GuiObject implements MapHandler {
       drawTraffic(context!, grid, game, player);
     }
     this.drawGameObjects(this.layers);
+    // EXT (trading): the caravans on their way (caravan-layer.ts).
+    if (caravanWalks.length > 0 && (this.layers & ViewportLayer.LayerObjects)) {
+      drawCaravans(this.frame!.getContext() as CanvasRenderingContext2D, (pos) => this.screenPixFromMapCoord(pos), 1, performance.now());
+    }
     if (grid !== null && (overlays & ViewportLayer.LayerBadges)) {
       drawBadges(context!, grid, game, player);
     }

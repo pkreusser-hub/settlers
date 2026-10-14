@@ -28,6 +28,7 @@ import { Log } from '../src/game/misc';
 import { GameInfo } from '../src/game/mission';
 import { MessageType } from '../src/game/player';
 import type { Message } from '../src/game/player';
+import { pathfinderMap } from '../src/game/pathfinder';
 import { Random } from '../src/game/random';
 import { ResourceType } from '../src/game/resource';
 import { GameStore } from '../src/game/savegame';
@@ -42,6 +43,7 @@ import {
   TRADE_MAX_OPEN_OFFERS,
   TRADE_MAX_SHIPMENTS,
   TRADE_OFFER_TICKS,
+  TRADE_TICKS_PER_STEP,
   TradeRefusal,
   unpackTradeData,
 } from '../src/game/trade';
@@ -175,9 +177,61 @@ function steps(game: Game, a: number, b: number): number {
   return (dx >= 0) === (dy >= 0) ? Math.max(Math.abs(dx), Math.abs(dy)) : Math.abs(dx) + Math.abs(dy);
 }
 
-function expectedDelay(game: Game, a: number, b: number): number {
-  return Math.min(TRADE_DELAY_MAX,
-                  TRADE_DELAY_BASE + TRADE_DELAY_PER_TILE * steps(game, castlePos(game, a), castlePos(game, b)));
+/* Flags and roads of the player from the flag of his castle toward the
+   castle of another, each flag nearer to it; the flags, castle flag first. */
+function layRoads(game: Game, player: number, toward: number, count: number): number[] {
+  const map = game.getMap();
+  const target = castlePos(game, toward);
+  let prev = map.moveDownRight(castlePos(game, player));
+  const flags = [prev];
+  for (let n = 0; n < count; n++) {
+    let built = false;
+    for (let i = 1; i < 120 && !built; i++) {
+      const pos = map.posAddSpirally(prev, i);
+      if (steps(game, pos, target) > steps(game, prev, target) - 3) continue;
+      if (!game.canBuildFlag(pos, game.getPlayer(player)!)) continue;
+      const dirs: number[] = pathfinderMap(map, prev, pos).getDirs().slice();
+      if (dirs.length < 3 || dirs.length > 7) continue;
+      exec(game, player, { type: 'buildFlag', pos });
+      if (!map.hasFlag(pos)) continue;
+      exec(game, player, { type: 'buildRoad', start: prev, dirs, flag: 0 });
+      if (map.paths(pos) === 0) {
+        exec(game, player, { type: 'demolishFlag', pos });
+        continue;
+      }
+      flags.push(pos);
+      prev = pos;
+      built = true;
+    }
+    if (!built) break;
+  }
+  return flags;
+}
+
+/* Update until no trader carries goods to the other player; the updates
+   it took. */
+function untilDelivered(game: Game, limit = 20000): number {
+  let n = 0;
+  while (game.trade.shipments.some((s) => s.count > 0) && n < limit) {
+    game.update();
+    n++;
+  }
+  return n;
+}
+
+/* Whether a way is positions one step apart from the flag of the castle
+   of a to the flag of the castle of b. */
+function wayOk(game: Game, way: number[], a: number, b: number): boolean {
+  const map = game.getMap();
+  if (way.length < 2) return false;
+  if (way[0] !== map.moveDownRight(castlePos(game, a))) return false;
+  if (way[way.length - 1] !== map.moveDownRight(castlePos(game, b))) return false;
+  for (let i = 1; i < way.length; i++) {
+    let near = false;
+    for (let d = 0; d < 6; d++) if (map.move(way[i - 1], d) === way[i]) near = true;
+    if (!near) return false;
+  }
+  return true;
 }
 
 /* Update until the game has no shipment; the updates it took. */
@@ -232,7 +286,6 @@ console.log('\n1. a gift and a swap between two people');
     game.trade.canPlayerTrade(0) && game.trade.canPlayerTrade(1) && game.hasTrading());
   messages(game, 0);
   messages(game, 1);
-  const delay = expectedDelay(game, 0, 1);
   const gold = game.getGoldTotal();
 
   // --- the gift
@@ -247,9 +300,12 @@ console.log('\n1. a gift and a swap between two people');
     unpackTradeData(told[0].data).count === 5 && unpackTradeData(told[0].data).count2 === 0);
   accept(game, 1, id);
   const s = game.trade.shipments[0];
+  const delay = s === undefined ? -1 : (s.way.length - 1) * TRADE_TICKS_PER_STEP;
   check(`player 1 accepts: the planks leave the stock of player 0 at once (${a0[R.TypePlank]} -> ` +
-    `${count(game, 0, R.TypePlank)}), one shipment, ${s?.left} ticks for ` +
-    `${steps(game, castlePos(game, 0), castlePos(game, 1))} steps`,
+    `${count(game, 0, R.TypePlank)}), one trader, ${s?.left} ticks for a way of ` +
+    `${s?.way.length - 1} steps from flag to flag (${steps(game, castlePos(game, 0), castlePos(game, 1))} straight)`,
+    s !== undefined && wayOk(game, s.way, 0, 1) &&
+    s.way.length - 1 >= steps(game, castlePos(game, 0), castlePos(game, 1)) &&
     game.trade.offers.length === 0 && game.trade.shipments.length === 1 &&
     count(game, 0, R.TypePlank) === a0[R.TypePlank] - 5 && count(game, 1, R.TypePlank) === b0[R.TypePlank] &&
     s.left === delay && s.delay === delay && s.res === R.TypePlank && s.count === 5 && s.from === 0 && s.to === 1);
@@ -259,7 +315,14 @@ console.log('\n1. a gift and a swap between two people');
     unpackTradeData(acceptedMsg[0].data).other === 1);
   check('integrity with the shipment under way: 0 problems', integrity(game) === 0);
   const speed = game.getSpeed();
-  const n = arrive();
+  const half = Math.floor(delay / speed / 2);
+  for (let i = 0; i < half; i++) { game.update(); plain.update(); }
+  const mid = game.trade.traderAt(s);
+  check(`half way the trader stands on his way: step ${mid === null ? -1 : s.way.indexOf(mid.from)}`,
+    mid !== null && Math.abs(s.way.indexOf(mid.from) - Math.floor((s.way.length - 1) / 2)) <= 1 &&
+    s.way.indexOf(mid.to) === s.way.indexOf(mid.from) + 1 && count(game, 1, R.TypePlank) === b0[R.TypePlank]);
+  let n = half + untilDelivered(game);
+  for (let i = half; i < n; i++) plain.update();
   const a1 = stock(game, 0);
   const b1 = stock(game, 1);
   moved[0][R.TypePlank] -= 5;
@@ -275,6 +338,15 @@ console.log('\n1. a gift and a swap between two people');
     arrived[0].pos === castlePos(game, 1) && unpackTradeData(arrived[0].data).other === 0 &&
     unpackTradeData(arrived[0].data).res === R.TypePlank && unpackTradeData(arrived[0].data).count === 5 &&
     unpackTradeData(arrived[0].data).code === 0);
+  const home = game.trade.shipments[0];
+  check('the trader walks home the same way, his bags empty',
+    game.trade.shipments.length === 1 && home.count === 0 && home.back && home.left === delay &&
+    game.trade.traderAt(home)?.from === s.way[s.way.length - 1]);
+  n = arrive();
+  check(`he is home after ${n} updates and the stocks are as they were`,
+    n === Math.ceil(delay / speed) && game.trade.shipments.length === 0 &&
+    stock(game, 0).join() === expected(0) && stock(game, 1).join() === expected(1) &&
+    tradeMessages(game, 0).length === 0 && tradeMessages(game, 1).length === 0);
 
   // --- the swap
   const id2 = offer(game, 0, 1, R.TypeStone, 4, R.TypeFish, 3);
@@ -321,6 +393,38 @@ console.log('\n1. a gift and a swap between two people');
 }
 
 // ---------------------------------------------------------------------------
+console.log('\n1b. the way of the trader');
+{
+  const game = makeGame([12, 13], true);
+  buildCastles(game, [0, 1]);
+  for (let i = 0; i < 50; i++) game.update();
+  const ours = layRoads(game, 0, 1, 3);
+  const theirs = layRoads(game, 1, 0, 2);
+  check(`player 0 has ${ours.length - 1} roads toward player 1, player 1 has ${theirs.length - 1} toward player 0`,
+    ours.length >= 2 && theirs.length >= 2);
+  const id = offer(game, 0, 1, R.TypePlank, 2);
+  accept(game, 1, id);
+  const way = game.trade.shipments[0]?.way ?? [];
+  const map = game.getMap();
+  /* The flags of the two networks on the way, in the order he passes them. */
+  const at = (flags: number[]): number[] => flags.map((f) => way.indexOf(f));
+  const own = at(ours);
+  const other = at(theirs);
+  const ascending = (xs: number[]): boolean => xs.every((x, i) => x >= 0 && (i === 0 || x > xs[i - 1]));
+  /* Along the roads every step is on a path. */
+  let onRoads = own.length > 0 && own[own.length - 1] > 0;
+  for (let k = 0; onRoads && k < own[own.length - 1]; k++) {
+    let d = -1;
+    for (let e = 0; e < 6; e++) if (map.move(way[k], e) === way[k + 1]) d = e;
+    if (d < 0 || !map.hasPath(way[k], d)) onRoads = false;
+  }
+  check(`the trader takes the roads of player 0 to their last flag (steps ${own.join(' ')}), ` +
+    `crosses to the last flag of player 1 and takes their roads in (steps ${other.join(' ')} of ${way.length - 1})`,
+    wayOk(game, way, 0, 1) && ascending(own) && ascending(other.slice().reverse()) && onRoads &&
+    own[own.length - 1] < other[other.length - 1]);
+  check('integrity: 0 problems', integrity(game) === 0);
+}
+
 console.log('\n2. what is refused');
 {
   // --- the option is off

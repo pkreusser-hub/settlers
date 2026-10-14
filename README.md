@@ -130,11 +130,14 @@ None of these change a game that does not use them.
   goods can be traded, weapons too; serfs and knights cannot. The other player
   has 3 minutes of game time to accept or decline, and you can have 4 offers
   open. Nothing is set aside while an offer is open: both stores must still
-  hold the goods when it is accepted. Then the goods leave both stores at once
-  and arrive after 10 seconds plus 1 second for each step between the two
-  stores, 2 minutes at most. No carrier walks them: roads of two players never
-  join. If the receiver has no castle or storehouse left the goods travel back,
-  and they are lost if the sender has none either. A player whose castle has
+  hold the goods when it is accepted. Then the goods leave both stores at once,
+  and each side sends a trader who leads a pack horse in the player's colour.
+  He follows his own roads to the flag nearest the other store, crosses open
+  country around water, buildings and stones to the nearest flag of the other
+  player, and takes their roads to the store, 0.8 seconds a step at normal
+  speed. The goods arrive with him, and he walks the same way home. If the
+  receiver has no castle or storehouse left he brings the goods back, and they
+  are lost if the sender has none either. A player whose castle has
   fallen cannot trade. Allies and enemies trade alike. A computer player takes
   every gift and accepts a swap only if you ask for no
   weapon or tool, for at most twice what you give, and for goods it has plenty

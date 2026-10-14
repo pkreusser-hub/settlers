@@ -34,7 +34,7 @@ import { mapBuildingSprite } from './interface';
 import type { Interface } from './interface';
 import { drawBadges, drawTerritory, drawTraffic, dropTerritoryTiles, fillGrid } from './map-overlays';
 import type { OverlayGrid } from './map-overlays';
-import { caravanWalks, drawCaravans } from './caravan-layer';
+import { collectCaravans, drawCaravanRow } from './caravan-layer';
 import { PixelScaler } from './pixel-scale';
 import { PopupBoxType } from './popup';
 import { prefBool, prefSetBool } from './prefs';
@@ -667,7 +667,8 @@ export class Viewport extends GuiObject implements MapHandler {
     }
 
     /* EXT (trading): a caravan walks between the ticks of the game. */
-    if (caravanWalks.length > 0) this.redraw = true;
+    // EXT (trading): the traders walk while the game runs.
+    if (this.interface.getGame()?.trade.shipments.length) this.redraw = true;
     if (this.redraw) {
       this.internalDraw();
       this.redraw = false;
@@ -2378,6 +2379,14 @@ export class Viewport extends GuiObject implements MapHandler {
     const row0 = idiv(this.offsetY, MAP_TILE_HEIGHT) & map.getRowMask();
     let pos = map.pos(col0, row0);
 
+    // EXT (trading): the traders on their way, drawn with the serfs of
+    // their row (caravan-layer.ts).
+    const game = this.interface.getGame();
+    const caravans = drawSerfs && game && game.trade.shipments.length > 0
+      ? collectCaravans(game, (p) => this.screenPixFromMapCoord(p)) : [];
+    const caravanCtx = caravans.length > 0
+      ? this.frame!.getContext() as CanvasRenderingContext2D : null;
+
     /* Loop until objects drawn fall outside the frame. */
     while (true) {
       /* short row */
@@ -2391,6 +2400,7 @@ export class Viewport extends GuiObject implements MapHandler {
       if (drawSerfs) {
         this.drawSerfRow(pos, ly, shortRowLen, lx);
       }
+      if (caravanCtx !== null) drawCaravanRow(caravanCtx, caravans, map.posRow(pos));
 
       ly += MAP_TILE_HEIGHT;
       if (ly >= this.height + 6 * MAP_TILE_HEIGHT) break;
@@ -2410,6 +2420,7 @@ export class Viewport extends GuiObject implements MapHandler {
       if (drawSerfs) {
         this.drawSerfRow(pos, ly, longRowLen, lx - 16);
       }
+      if (caravanCtx !== null) drawCaravanRow(caravanCtx, caravans, map.posRow(pos));
 
       ly += MAP_TILE_HEIGHT;
       if (ly >= this.height + 6 * MAP_TILE_HEIGHT) break;
@@ -2625,10 +2636,6 @@ export class Viewport extends GuiObject implements MapHandler {
       drawTraffic(context!, grid, game, player);
     }
     this.drawGameObjects(this.layers);
-    // EXT (trading): the caravans on their way (caravan-layer.ts).
-    if (caravanWalks.length > 0 && (this.layers & ViewportLayer.LayerObjects)) {
-      drawCaravans(this.frame!.getContext() as CanvasRenderingContext2D, (pos) => this.screenPixFromMapCoord(pos), 1, performance.now());
-    }
     if (grid !== null && (overlays & ViewportLayer.LayerBadges)) {
       drawBadges(context!, grid, game, player);
     }

@@ -12,9 +12,6 @@ import './trade.css';
 import type { Building } from '../../game/building';
 import { ResourceType } from '../../game/resource';
 import {
-  TRADE_DELAY_BASE,
-  TRADE_DELAY_MAX,
-  TRADE_DELAY_PER_TILE,
   TRADE_MAX_AMOUNT,
   TRADE_MAX_OPEN_OFFERS,
   TRADE_OFFER_TICKS,
@@ -301,9 +298,9 @@ function tradeBox(ctx: BoxContext): BoxView {
         offerRow,
         hint(
           `The other player has ${ticksAsClock(TRADE_OFFER_TICKS)} minutes of game time to answer. ` +
-          'Nothing is set aside while the offer is open. Once it is accepted the goods leave at ' +
-          `once and travel ${ticksAsClock(TRADE_DELAY_BASE)} to ${ticksAsClock(TRADE_DELAY_MAX)} ` +
-          `minutes, ${TRADE_DELAY_PER_TILE / 100} second for each step between the two stores.`),
+          'Nothing is set aside while the offer is open. Once it is accepted, a trader takes the ' +
+          'goods on a pack horse along your roads, then across country to the other store. The ' +
+          'goods arrive with him.'),
       ]),
   );
   makeOffer.el.classList.add('tr-make');
@@ -314,7 +311,8 @@ function tradeBox(ctx: BoxContext): BoxView {
   const toMe = (): TradeOffer[] => trade.offers.filter((offer) => offer.to === me);
   const mine = (): TradeOffer[] => trade.offers.filter((offer) => offer.from === me);
   const moving = (): TradeShipment[] =>
-    trade.shipments.filter((s) => s.from === me || s.to === me);
+    /* A trader on his way home carries nothing: not listed. */
+    trade.shipments.filter((s) => s.count > 0 && (s.from === me || s.to === me));
 
   const incoming = list(
     'Offers to you',

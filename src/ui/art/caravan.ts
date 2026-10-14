@@ -1,36 +1,36 @@
-// EXT (trading): the trader's caravan, drawn in code. A trader leads a horse
-// that pulls a covered wagon; the cover and the trader's tunic take the
-// colour of the player. No file of the original art is used: every pixel is
-// set here, then a dark outline is drawn around the shapes, as the sprites
-// of the game have.
+// EXT (trading): the trader and his pack horse, drawn in code. The trader
+// leads the horse by the rein; the horse carries saddle bags on a blanket in
+// the colour of the player, and the trader's tunic takes that colour too. No
+// file of the original art is used: every pixel is set here. The sizes and
+// shading follow the serfs of the game: the trader is as tall as a serf (12
+// pixels), there is no dark outline, and the edges of a shape are a darker
+// shade of its own colour.
 //
 // Views: 'side' (walking right; mirror for left), 'front' (walking down,
 // toward the viewer), 'back' (walking up, away). Four walking frames each.
+// The feet stand on the last row of every view.
 
 export type CaravanView = 'side' | 'front' | 'back';
 export const CARAVAN_FRAMES = 4;
 
 export interface Rgb { red: number; green: number; blue: number }
 
-/* Colours, light from the upper left. */
+/* Colours close to those of the serfs, light from the upper left. */
 const C = {
-  outline: '#24140a',
-  wood: '#7a4a24', woodLight: '#a8703a', woodDark: '#4e2e14',
-  wheel: '#5a3618', hub: '#2e1a0c',
-  cloth: '#e6d9ae', clothShade: '#c4b386', clothDark: '#9c8c62',
-  horse: '#8c4c22', horseLight: '#b8703a', horseDark: '#5c2e12',
-  mane: '#2e1a0c', hoof: '#1e120a', muzzle: '#c89a6a',
-  skin: '#e0a878', skinShade: '#b87a50', hair: '#4a2a12',
-  hat: '#5a3a1a', hatBand: '#2e1a0c', boots: '#2e1a0c', trousers: '#5a4630',
-  harness: '#3a2410', gold: '#e8c050', inside: '#2e2014',
+  wood: '#87573b', woodLight: '#ab7b5b', woodDark: '#5f3723', woodDeep: '#432313',
+  cloth: '#e7dbbb', clothShade: '#c7b393',
+  horse: '#9f6f4f', horseLight: '#b38767', horseDark: '#734b33',
+  mane: '#432313', hoof: '#432313', muzzle: '#cba37f',
+  skin: '#efcfaf', skinShade: '#cba37f', hair: '#87573b',
+  hat: '#936343', hatDark: '#5f3723', trousers: '#6b5b4b', trousersFar: '#4f4333',
+  rein: '#5f3723', eye: '#000000',
 };
 
 class Grid {
   readonly px: (string | null)[];
-  /* ox: a margin on the left, so a shape at x = 0 keeps its outline. */
-  constructor(readonly w: number, readonly h: number, readonly ox = 0) { this.px = new Array(w * h).fill(null); }
+  constructor(readonly w: number, readonly h: number) { this.px = new Array(w * h).fill(null); }
   set(x: number, y: number, c: string): void {
-    x = Math.round(x) + this.ox; y = Math.round(y);
+    x = Math.round(x); y = Math.round(y);
     if (x >= 0 && y >= 0 && x < this.w && y < this.h) this.px[y * this.w + x] = c;
   }
   rect(x0: number, y0: number, x1: number, y1: number, c: string): void {
@@ -39,30 +39,6 @@ class Grid {
   line(x0: number, y0: number, x1: number, y1: number, c: string): void {
     const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
     for (let i = 0; i <= n; i++) this.set(x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n, c);
-  }
-  ellipse(cx: number, cy: number, rx: number, ry: number, c: string): void {
-    for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++) {
-      for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
-        const dx = (x - cx) / (rx + 0.35), dy = (y - cy) / (ry + 0.35);
-        if (dx * dx + dy * dy <= 1) this.set(x, y, c);
-      }
-    }
-  }
-  /* A dark line around every shape: each empty pixel next to a filled one. */
-  outline(): void {
-    const add: number[] = [];
-    for (let y = 0; y < this.h; y++) {
-      for (let x = 0; x < this.w; x++) {
-        if (this.px[y * this.w + x] !== null) continue;
-        const near = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
-          const nx = x + dx, ny = y + dy;
-          return nx >= 0 && ny >= 0 && nx < this.w && ny < this.h &&
-            this.px[ny * this.w + nx] !== null && this.px[ny * this.w + nx] !== C.outline;
-        });
-        if (near) add.push(y * this.w + x);
-      }
-    }
-    for (const i of add) this.px[i] = C.outline;
   }
   canvas(mirror: boolean): HTMLCanvasElement {
     const cv = document.createElement('canvas');
@@ -85,208 +61,182 @@ function hex(c: Rgb, f = 1): string {
   return `#${k(c.red)}${k(c.green)}${k(c.blue)}`;
 }
 
-/* Leg swing per frame for a four-beat walk: [front near, front far, back near, back far]. */
-const HORSE_STEP = [[2, -1, -1, 1], [0, 1, 1, -1], [-2, 1, 1, -1], [0, -1, -1, 1]];
-const PERSON_STEP = [2, 0, -2, 0];
+/* A horse leg through one stride, by phase 0..3: reaching forward, planted
+   under the body, pushed back, then lifted as it swings forward again.
+   Diagonal legs move together, the other pair half a stride later. */
+const LEG_DX = [1, 0, -1, 0];
+const LEG_LIFT = [0, 0, 0, 1];
+/* Lift seen head-on or from behind, where a swing shows only as height. */
+const LEG_LIFT_FRONT = [1, 0, 0, 2];
+const PERSON_STEP = [1, 0, -1, 0];
 
-/* A wheel seen from the side: rim, four spokes turning with the frame. */
-function wheel(g: Grid, cx: number, cy: number, r: number, frame: number): void {
-  g.ellipse(cx, cy, r, r, C.wheel);
-  g.ellipse(cx, cy, r - 1.4, r - 1.4, C.woodDark);
-  for (let s = 0; s < 4; s++) {
-    const a = (s * Math.PI) / 4 * 2 / 2 + (frame * Math.PI) / 8;
-    g.line(cx - Math.cos(a) * (r - 1), cy - Math.sin(a) * (r - 1), cx + Math.cos(a) * (r - 1), cy + Math.sin(a) * (r - 1), C.wood);
-  }
-  g.set(cx, cy, C.hub);
+/* One horse leg from the side, from the body down to the hoof. */
+function legSide(g: Grid, x: number, top: number, base: number, phase: number, c: string): void {
+  const dx = LEG_DX[phase], lift = LEG_LIFT[phase];
+  const foot = base - lift;
+  /* a lifted leg bends at the knee: the hoof trails back a pixel */
+  g.line(x, top, x + dx, foot - 1 - lift, c);
+  if (lift > 0) g.set(x + dx - 1, foot - 1, c);
+  g.set(lift > 0 ? x + dx - 1 : x + dx, foot, C.hoof);
 }
 
-/* A person walking, seen from the side, feet on y = base. */
-function personSide(g: Grid, x: number, base: number, frame: number, tunic: string, tunicShade: string): void {
-  const step = PERSON_STEP[frame];
-  const bob = step === 0 ? 1 : 0;
-  const top = base - 17 + bob;
-  /* legs */
-  g.line(x + 1, top + 11, x + 1 + step, base - 1, C.trousers);
-  g.line(x + 2, top + 11, x + 2 - step, base - 1, C.trousers);
-  g.set(x + 1 + step, base, C.boots); g.set(x + 2 + step, base, C.boots);
-  g.set(x + 2 - step, base, C.boots); g.set(x + 3 - step, base, C.boots);
-  /* tunic */
-  g.rect(x, top + 5, x + 3, top + 11, tunic);
-  g.rect(x, top + 9, x + 3, top + 11, tunicShade);
-  g.set(x + 1, top + 9, C.harness); g.set(x + 2, top + 9, C.harness); /* belt */
-  /* arm forward, holding the rein */
-  g.line(x + 3, top + 6, x + 4, top + 8, tunicShade);
-  g.set(x + 4, top + 9, C.skin);
-  /* head and hat */
-  g.rect(x + 1, top + 2, x + 3, top + 4, C.skin);
-  g.set(x + 3, top + 3, C.skinShade);
-  g.set(x + 1, top + 4, C.hair);
-  g.rect(x, top + 1, x + 4, top + 1, C.hat);
-  g.rect(x + 1, top, x + 3, top, C.hat);
-  g.set(x + 2, top + 1, C.hatBand);
+/* One horse leg seen head-on or from behind. */
+function legFront(g: Grid, x: number, top: number, base: number, phase: number, c: string): void {
+  const lift = LEG_LIFT_FRONT[phase];
+  g.rect(x, top, x, base - 1 - lift, c);
+  g.set(x, base - lift, C.hoof);
+}
+
+/* The trader from the side, walking right, 5 wide and 12 tall, feet on base.
+   The back hand holds the rein of the horse behind him. */
+function personSide(g: Grid, x: number, base: number, frame: number, tunic: string, shade: string): void {
+  const s = PERSON_STEP[frame];
+  const top = base - 11;
+  /* far leg, then near leg */
+  g.line(x + 2, top + 8, x + 2 - s, base - 1, C.trousersFar); g.set(x + 2 - s, base, C.woodDeep);
+  g.line(x + 1, top + 8, x + 1 + s, base - 1, C.trousers);
+  g.set(x + 1 + s, base, C.woodDeep); g.set(x + 2 + s, base, C.woodDeep);
+  /* tunic, darker at the back and the hem */
+  g.rect(x + 1, top + 4, x + 3, top + 7, tunic);
+  g.rect(x + 1, top + 4, x + 1, top + 7, shade);
+  g.rect(x + 1, top + 7, x + 3, top + 7, shade);
+  /* arm back, hand on the rein */
+  g.set(x, top + 5, shade); g.set(x, top + 6, C.skinShade);
+  /* head, hat */
+  g.rect(x + 2, top + 2, x + 4, top + 3, C.skin);
+  g.set(x + 2, top + 2, C.hair); g.set(x + 4, top + 3, C.skinShade);
+  g.set(x + 3, top + 2, C.eye);
+  g.rect(x + 2, top, x + 3, top, C.hat);
+  g.rect(x + 1, top + 1, x + 4, top + 1, C.hatDark);
+}
+
+/* The trader facing the viewer (or away), 4 wide and 12 tall. */
+function personFront(g: Grid, x: number, base: number, frame: number, tunic: string, shade: string, away: boolean): void {
+  const s = PERSON_STEP[frame];
+  const top = base - 11;
+  g.rect(x + 1, top + 8, x + 1, base - 1 - (s > 0 ? 1 : 0), C.trousers);
+  g.rect(x + 2, top + 8, x + 2, base - 1 - (s < 0 ? 1 : 0), C.trousersFar);
+  g.set(x + 1, base - (s > 0 ? 1 : 0), C.woodDeep); g.set(x + 2, base - (s < 0 ? 1 : 0), C.woodDeep);
+  g.rect(x, top + 4, x + 3, top + 7, tunic);
+  g.rect(x + 3, top + 4, x + 3, top + 7, shade);
+  g.rect(x, top + 7, x + 3, top + 7, shade);
+  g.rect(x, top + 2, x + 3, top + 3, away ? C.hair : C.skin);
+  if (!away) { g.set(x + 1, top + 2, C.eye); g.set(x + 2, top + 2, C.eye); g.set(x + 3, top + 3, C.skinShade); }
+  g.rect(x + 1, top, x + 2, top, C.hat);
+  g.rect(x, top + 1, x + 3, top + 1, C.hatDark);
 }
 
 function drawSide(frame: number, color: Rgb): Grid {
-  const g = new Grid(66, 32, 1);
-  const base = 29;
-  const cover = hex(color), coverShade = hex(color, 0.72);
-  const step = HORSE_STEP[frame];
-  const bob = frame % 2 === 1 ? 1 : 0;
+  const g = new Grid(21, 16);
+  const base = 15;
+  const cover = hex(color), coverShade = hex(color, 0.78);
+  /* the body rises a pixel while two legs stand under it */
+  const bob = frame % 2 === 1 ? 0 : 1;
+  const hx = 1;
+  const a = frame, b = (frame + 2) % 4;
 
-  /* far wheel, behind the box */
-  wheel(g, 9, base - 4, 4, frame + 1);
-  /* covered top: an arch of cloth on hoops, the player's stripe along it,
-     the side away from the light in shade */
-  for (let x = 3; x <= 24; x++) {
-    const top = 16 - Math.round(Math.sqrt(Math.max(0, 1 - ((x - 13.5) / 11) ** 2)) * 10);
-    for (let y = top; y <= 16; y++) {
-      const stripe = y === 9 || y === 10 ? cover : y === 11 ? coverShade : null;
-      g.set(x, y, stripe ?? (x >= 17 || y >= 14 ? C.clothShade : C.cloth));
-    }
-  }
-  for (const hx of [8, 13, 18]) g.line(hx, 7, hx, 15, C.clothDark);
-  /* wagon box, plank lines */
-  g.rect(2, 16, 25, 22, C.wood);
-  g.rect(2, 16, 25, 16, C.woodLight);
-  g.rect(2, 21, 25, 22, C.woodDark);
-  for (let x = 7; x < 25; x += 6) g.line(x, 17, x, 20, C.woodDark);
-  /* a barrel lashed on at the back */
-  g.rect(0, 14, 2, 18, C.woodLight); g.set(1, 15, C.woodDark); g.set(1, 17, C.woodDark);
-  /* near wheels */
-  wheel(g, 8, base - 4, 5, frame);
-  wheel(g, 21, base - 3, 4, frame);
-  /* shafts to the horse */
-  g.line(25, 19, 33, 17 + bob, C.woodDark);
-
-  /* horse: far legs first, darker */
-  const hx = 32;
-  const legTop = 21 + bob;
-  g.line(hx + 3, legTop, hx + 3 + step[3], base - 1, C.horseDark); g.set(hx + 3 + step[3], base, C.hoof);
-  g.line(hx + 13, legTop, hx + 13 + step[1], base - 1, C.horseDark); g.set(hx + 13 + step[1], base, C.hoof);
+  /* far legs, darker */
+  legSide(g, hx + 1, 11 + bob, base, a, C.horseDark);
+  legSide(g, hx + 8, 11 + bob, base, b, C.horseDark);
   /* body */
-  g.ellipse(hx + 8, 17 + bob, 8, 4.5, C.horse);
-  g.rect(hx + 2, 14 + bob, hx + 13, 15 + bob, C.horseLight);
-  g.rect(hx + 2, 20 + bob, hx + 14, 21 + bob, C.horseDark);
-  /* harness: collar and strap */
-  g.line(hx + 13, 13 + bob, hx + 14, 21 + bob, C.harness);
-  g.line(hx + 3, 16 + bob, hx + 13, 16 + bob, C.harness);
-  g.set(hx + 8, 16 + bob, C.gold);
-  /* neck and head */
-  g.line(hx + 14, 15 + bob, hx + 18, 9 + bob, C.horse);
-  g.line(hx + 15, 16 + bob, hx + 19, 10 + bob, C.horse);
-  g.line(hx + 13, 14 + bob, hx + 17, 9 + bob, C.mane);
-  g.rect(hx + 17, 7 + bob, hx + 22, 10 + bob, C.horse);
-  g.rect(hx + 21, 9 + bob, hx + 23, 11 + bob, C.muzzle);
-  g.set(hx + 18, 6 + bob, C.horseDark); /* ear */
-  g.set(hx + 20, 8 + bob, C.hoof); /* eye */
+  g.rect(hx, 7 + bob, hx + 9, 10 + bob, C.horse);
+  g.rect(hx + 1, 7 + bob, hx + 8, 7 + bob, C.horseLight);
+  g.rect(hx, 10 + bob, hx + 9, 10 + bob, C.horseDark);
+  g.set(hx, 7 + bob, C.horseDark);
   /* tail */
-  g.line(hx, 15 + bob, hx - 2, 21 + bob, C.mane);
-  g.line(hx - 1, 15 + bob, hx - 3, 20 + bob, C.mane);
+  g.line(hx - 1, 8 + bob, hx - 1, 11 + bob, C.mane);
+  /* neck, head, muzzle, ear, eye */
+  g.line(hx + 9, 7 + bob, hx + 10, 4 + bob, C.horse);
+  g.line(hx + 10, 7 + bob, hx + 11, 4 + bob, C.horse);
+  g.line(hx + 8, 5 + bob, hx + 9, 3 + bob, C.mane);
+  g.rect(hx + 10, 2 + bob, hx + 12, 4 + bob, C.horse);
+  g.rect(hx + 10, 2 + bob, hx + 11, 2 + bob, C.horseLight);
+  g.rect(hx + 13, 3 + bob, hx + 13, 4 + bob, C.muzzle);
+  g.set(hx + 10, 1 + bob, C.horseDark);
+  g.set(hx + 11, 3 + bob, C.eye);
+  /* the load: a bundle on a blanket, a leather bag hanging at the side */
+  g.rect(hx + 3, 5 + bob, hx + 6, 5 + bob, C.cloth);
+  g.set(hx + 6, 5 + bob, C.clothShade);
+  g.rect(hx + 2, 6 + bob, hx + 7, 6 + bob, cover);
+  g.rect(hx + 2, 7 + bob, hx + 7, 7 + bob, coverShade);
+  g.rect(hx + 3, 8 + bob, hx + 6, 11 + bob, C.woodLight);
+  g.rect(hx + 3, 8 + bob, hx + 6, 8 + bob, C.wood);
+  g.rect(hx + 3, 11 + bob, hx + 6, 11 + bob, C.wood);
+  g.set(hx + 6, 9 + bob, C.wood); g.set(hx + 6, 10 + bob, C.wood);
+  g.set(hx + 4, 9 + bob, C.woodDeep);
   /* near legs */
-  g.line(hx + 4, legTop, hx + 4 + step[2], base - 1, C.horse); g.set(hx + 4 + step[2], base, C.hoof);
-  g.line(hx + 14, legTop, hx + 14 + step[0], base - 1, C.horse); g.set(hx + 14 + step[0], base, C.hoof);
+  legSide(g, hx + 2, 11 + bob, base, b, C.horse);
+  legSide(g, hx + 9, 11 + bob, base, a, C.horse);
 
-  /* the trader walks at the horse's head, rein in hand */
-  personSide(g, 57, base, frame, cover, coverShade);
-  g.line(hx + 22, 11 + bob, 61, 21 - (PERSON_STEP[frame] === 0 ? 0 : 1), C.harness);
-
-  g.outline();
+  /* the trader ahead of the horse, the rein from the bit to his hand */
+  const tx = hx + 15;
+  personSide(g, tx, base, frame, cover, coverShade);
+  g.line(hx + 13, 5 + bob, tx, base - 5, C.rein);
   return g;
 }
 
 function drawFront(frame: number, color: Rgb): Grid {
-  const g = new Grid(36, 38);
-  const base = 35;
-  const cover = hex(color), coverShade = hex(color, 0.72);
-  const step = HORSE_STEP[frame];
-  const bob = frame % 2 === 1 ? 1 : 0;
+  const g = new Grid(14, 16);
+  const base = 15;
+  const cover = hex(color), coverShade = hex(color, 0.78);
+  const bob = frame % 2 === 1 ? 0 : 1;
 
-  /* the wagon behind the horse: cover, box, wheels at the sides */
-  g.ellipse(16, 12, 11, 9, C.cloth);
-  g.rect(5, 12, 27, 20, C.cloth);
-  g.rect(5, 6, 27, 8, cover);
-  g.rect(5, 8, 27, 8, coverShade);
-  /* the front of the cover, drawn together round a small opening */
-  g.ellipse(16, 11, 4, 3, C.inside);
-  for (const [x0, x1] of [[8, 12], [24, 20]]) g.line(x0, 5, x1, 12, C.clothShade);
-  g.rect(5, 12, 27, 18, C.clothShade);
-  g.rect(5, 19, 27, 24, C.wood);
-  g.rect(5, 19, 27, 19, C.woodLight);
-  g.rect(3, 18, 5, 29, C.wheel); g.rect(27, 18, 29, 29, C.wheel);
-  g.line(4, 19 + (frame % 2), 4, 28 - (frame % 2), C.woodDark);
-  g.line(28, 19 + (frame % 2), 28, 28 - (frame % 2), C.woodDark);
+  /* legs, then the chest, the bags at both sides, the head on top */
+  legFront(g, 3, 12 + bob, base, frame, C.horse);
+  legFront(g, 6, 12 + bob, base, (frame + 2) % 4, C.horseDark);
+  g.rect(3, 7 + bob, 6, 11 + bob, C.horse);
+  g.rect(3, 7 + bob, 3, 11 + bob, C.horseLight);
+  g.rect(6, 7 + bob, 6, 11 + bob, C.horseDark);
+  g.rect(2, 7 + bob, 7, 7 + bob, cover);
+  for (const x of [1, 7]) {
+    g.rect(x, 8 + bob, x + 1, 11 + bob, C.woodLight);
+    g.rect(x, 8 + bob, x + 1, 8 + bob, coverShade);
+    g.rect(x, 11 + bob, x + 1, 11 + bob, C.wood);
+  }
+  g.rect(8, 9 + bob, 8, 11 + bob, C.wood);
+  g.rect(4, 3 + bob, 5, 9 + bob, C.horse);
+  g.rect(4, 3 + bob, 5, 4 + bob, C.mane);
+  g.rect(4, 8 + bob, 5, 9 + bob, C.muzzle);
+  g.set(5, 5 + bob, C.horseDark); g.set(5, 6 + bob, C.horseDark);
+  g.set(3, 2 + bob, C.horseDark); g.set(6, 2 + bob, C.horseDark);
+  g.set(3, 5 + bob, C.eye); g.set(6, 5 + bob, C.eye);
 
-  /* horse coming toward the viewer */
-  g.rect(12, 20 + bob, 20, 27 + bob, C.horse);
-  g.rect(12, 20 + bob, 13, 27 + bob, C.horseLight);
-  g.line(12, 21 + bob, 20, 21 + bob, C.harness);
-  g.set(16, 21 + bob, C.gold);
-  /* legs, alternating */
-  g.rect(13, 28 + bob, 14, base - 1 - Math.max(0, step[0]), C.horse);
-  g.rect(18, 28 + bob, 19, base - 1 - Math.max(0, step[1]), C.horse);
-  g.set(13, base - Math.max(0, step[0]), C.hoof); g.set(14, base - Math.max(0, step[0]), C.hoof);
-  g.set(18, base - Math.max(0, step[1]), C.hoof); g.set(19, base - Math.max(0, step[1]), C.hoof);
-  /* head */
-  g.rect(14, 13 + bob, 18, 21 + bob, C.horse);
-  g.rect(14, 19 + bob, 18, 21 + bob, C.muzzle);
-  g.line(16, 12 + bob, 16, 16 + bob, C.mane);
-  g.set(14, 12 + bob, C.horseDark); g.set(18, 12 + bob, C.horseDark);
-  g.set(14, 16 + bob, C.hoof); g.set(18, 16 + bob, C.hoof);
-
-  /* the trader at the horse's side, facing the viewer */
-  const tx = 25, ps = PERSON_STEP[frame], pb = ps === 0 ? 1 : 0;
-  const top = base - 17 + pb;
-  g.rect(tx + 1, top + 11, tx + 1, base - 1 - (ps > 0 ? 1 : 0), C.trousers);
-  g.rect(tx + 3, top + 11, tx + 3, base - 1 - (ps < 0 ? 1 : 0), C.trousers);
-  g.set(tx + 1, base - (ps > 0 ? 1 : 0), C.boots); g.set(tx + 3, base - (ps < 0 ? 1 : 0), C.boots);
-  g.rect(tx, top + 5, tx + 4, top + 11, cover);
-  g.rect(tx, top + 9, tx + 4, top + 11, coverShade);
-  g.rect(tx, top + 9, tx + 4, top + 9, C.harness);
-  g.rect(tx + 1, top + 2, tx + 3, top + 4, C.skin);
-  g.set(tx + 1, top + 3, C.hoof); g.set(tx + 3, top + 3, C.hoof);
-  g.rect(tx, top + 1, tx + 4, top + 1, C.hat); g.rect(tx + 1, top, tx + 3, top, C.hat);
-  g.line(tx - 1, top + 7, 18, 19 + bob, C.harness);
-
-  g.outline();
+  /* the trader beside the horse */
+  const tx = 10;
+  personFront(g, tx, base, frame, cover, coverShade, false);
+  g.line(tx - 1, base - 6, 5, 9 + bob, C.rein);
   return g;
 }
 
 function drawBack(frame: number, color: Rgb): Grid {
-  const g = new Grid(38, 36, 2);
-  const base = 33;
-  const cover = hex(color), coverShade = hex(color, 0.72);
-  const bob = frame % 2 === 1 ? 1 : 0;
+  const g = new Grid(14, 16);
+  const base = 15;
+  const cover = hex(color), coverShade = hex(color, 0.78);
+  const bob = frame % 2 === 1 ? 0 : 1;
 
-  /* the horse ahead shows only its ears and back above the cover */
-  g.rect(15, 2 + bob, 15, 3 + bob, C.horseDark); g.rect(18, 2 + bob, 18, 3 + bob, C.horseDark);
-  g.rect(14, 4 + bob, 19, 6 + bob, C.horse);
-  /* wagon from behind */
-  g.ellipse(17, 14, 12, 9, C.cloth);
-  g.rect(5, 14, 29, 22, C.cloth);
-  g.rect(5, 8, 29, 10, cover);
-  g.rect(5, 10, 29, 10, coverShade);
-  g.ellipse(17, 17, 7, 5, C.inside);
-  g.rect(12, 18, 15, 21, C.woodLight); g.set(13, 19, C.woodDark); /* a crate inside */
-  g.rect(18, 19, 21, 21, C.clothDark); /* a sack */
-  g.rect(5, 21, 29, 26, C.wood);
-  g.rect(5, 21, 29, 21, C.woodLight);
-  g.line(5, 24, 29, 24, C.woodDark);
-  g.rect(3, 20, 5, 31, C.wheel); g.rect(29, 20, 31, 31, C.wheel);
-  g.line(4, 21 + (frame % 2), 4, 30 - (frame % 2), C.woodDark);
-  g.line(30, 21 + (frame % 2), 30, 30 - (frame % 2), C.woodDark);
+  /* the head ahead, seen from behind: ears and the back of the neck */
+  g.set(7, 1 + bob, C.horseDark); g.set(10, 1 + bob, C.horseDark);
+  g.rect(7, 2 + bob, 10, 3 + bob, C.horse);
+  g.rect(8, 2 + bob, 9, 6 + bob, C.mane);
+  /* hind legs, the rump, the tail */
+  legFront(g, 6, 12 + bob, base, frame, C.horse);
+  legFront(g, 11, 12 + bob, base, (frame + 2) % 4, C.horseDark);
+  g.rect(6, 7 + bob, 11, 11 + bob, C.horse);
+  g.rect(6, 7 + bob, 6, 11 + bob, C.horseLight);
+  g.rect(11, 7 + bob, 11, 11 + bob, C.horseDark);
+  g.rect(6, 4 + bob, 11, 4 + bob, C.cloth);
+  g.rect(6, 5 + bob, 11, 5 + bob, C.clothShade);
+  g.rect(5, 6 + bob, 12, 6 + bob, cover);
+  for (const x of [4, 12]) {
+    g.rect(x, 7 + bob, x + 1, 10 + bob, C.woodLight);
+    g.rect(x, 7 + bob, x + 1, 7 + bob, coverShade);
+    g.rect(x, 10 + bob, x + 1, 10 + bob, C.wood);
+  }
+  g.rect(8, 7 + bob, 9, 12 + bob, C.mane);
+  g.set(9, 13 + bob, C.mane);
 
   /* the trader at the left, walking away */
-  const tx = 0, ps = PERSON_STEP[frame], pb = ps === 0 ? 1 : 0;
-  const top = base - 17 + pb;
-  g.rect(tx + 1, top + 11, tx + 1, base - 1 - (ps > 0 ? 1 : 0), C.trousers);
-  g.rect(tx + 3, top + 11, tx + 3, base - 1 - (ps < 0 ? 1 : 0), C.trousers);
-  g.set(tx + 1, base - (ps > 0 ? 1 : 0), C.boots); g.set(tx + 3, base - (ps < 0 ? 1 : 0), C.boots);
-  g.rect(tx, top + 5, tx + 4, top + 11, cover);
-  g.rect(tx, top + 9, tx + 4, top + 11, coverShade);
-  g.rect(tx + 1, top + 2, tx + 3, top + 4, C.hair);
-  g.rect(tx, top + 1, tx + 4, top + 1, C.hat); g.rect(tx + 1, top, tx + 3, top, C.hat);
-
-  g.outline();
+  personFront(g, 0, base, frame, cover, coverShade, true);
   return g;
 }
 

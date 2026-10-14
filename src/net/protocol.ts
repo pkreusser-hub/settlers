@@ -7,7 +7,8 @@ import type { Command } from './command';
 // Bumped whenever the messages, the lockstep constants or the simulation
 // change in a way that two different builds could not play together.
 // 11: the state hash and the save carry the order of the free indexes (EXT).
-export const PROTOCOL_VERSION = 11;
+// 12: trade goods travel with a trader along a way (EXT, trade-route.ts).
+export const PROTOCOL_VERSION = 12;
 
 // Most human players of a game (the game has four players).
 export const MAX_HUMANS = 4;

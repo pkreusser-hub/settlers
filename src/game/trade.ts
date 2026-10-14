@@ -10,10 +10,12 @@
 //
 // Roads of different players never join, so no carrier can bring goods
 // across a border. On accept the goods leave the stocks at once and travel
-// as shipments: entries of a list of the game that count ticks down and then
-// put the goods into a stock of the receiver the way a delivered resource
-// gets there (Building.requestedResourceDelivered). The time grows with the
-// distance between the two stocks.
+// as shipments: a trader of the sender leads a pack horse along a way
+// worked out then (trade-route.ts), TRADE_TICKS_PER_STEP for each step. When
+// he gets there the goods go into a stock of the receiver the way a
+// delivered resource gets there (Building.requestedResourceDelivered), and
+// he walks the same way home. A shipment of a save made before the traders
+// has no way: it counts its ticks down and arrives, with nobody to see.
 //
 // Integers only. The lists are arrays in the order the entries were made.
 
@@ -25,6 +27,7 @@ import { MessageType } from './player';
 import type { Player } from './player';
 import { ResourceType } from './resource';
 import type { SaveReaderText, SaveWriterText } from './savegame';
+import { routeFromText, routeToText, tradeRoute, TRADE_ROUTE_MAX } from './trade-route';
 
 /* Ticks an offer stays open: 3 minutes of game time (100 ticks a second at
    normal speed). */
@@ -41,6 +44,8 @@ export const TRADE_MAX_SHIPMENTS = 64;
 export const TRADE_DELAY_BASE = 1000;
 export const TRADE_DELAY_PER_TILE = 100;
 export const TRADE_DELAY_MAX = 12000;
+/* Ticks the trader takes for one step of his way. */
+export const TRADE_TICKS_PER_STEP = 80;
 
 /* The resources that can be traded: all 26 (weapons too). Serfs and knights
    are not goods. */
@@ -96,10 +101,13 @@ export interface TradeShipment {
   to: number;
   inv: number; /* The inventory of `to` it should reach; another if gone. */
   res: ResourceType;
-  count: number;
+  count: number; /* 0 when the trader goes home after the delivery. */
   left: number; /* Ticks until it arrives. */
   delay: number; /* The whole way, for the way back. */
-  back: boolean; /* On the way back to `from`: `to` had no stock. */
+  back: boolean; /* On the way back to `from`: delivered, or `to` had no stock. */
+  /* The way of the trader, from the flag of `from` to the flag of `to`;
+     [] for a shipment of an older save. */
+  way: MapPos[];
 }
 
 /* What the trade messages carry in Message.data: the other player in bits
@@ -317,20 +325,15 @@ export class Trade {
     const offer = this.getOffer(id)!;
     const own = this.getStockAt(player, pos)!;
     const theirs = this.getStock(offer.from, offer.inv)!;
-    const delay = this.delay(theirs, own);
 
     /* The counts were checked above: neither goes below 0. */
     theirs.setCountOf(offer.give, theirs.getCountOf(offer.give) - offer.giveCount);
-    this.shipments.push({
-      from: offer.from, to: offer.to, inv: own.getIndex(),
-      res: offer.give, count: offer.giveCount, left: delay, delay, back: false,
-    });
+    this.shipments.push(this.newShipment(offer.from, offer.to, theirs, own,
+                                         offer.give, offer.giveCount));
     if (offer.wantCount > 0) {
       own.setCountOf(offer.want, own.getCountOf(offer.want) - offer.wantCount);
-      this.shipments.push({
-        from: offer.to, to: offer.from, inv: theirs.getIndex(),
-        res: offer.want, count: offer.wantCount, left: delay, delay, back: false,
-      });
+      this.shipments.push(this.newShipment(offer.to, offer.from, own, theirs,
+                                           offer.want, offer.wantCount));
     }
 
     this.offers.splice(this.offers.indexOf(offer), 1);
@@ -338,6 +341,29 @@ export class Trade {
       MessageType.TypeTradeAccepted, 0,
       packTradeData(offer.to, offer.give, offer.giveCount, offer.want, offer.wantCount, 0));
     return true;
+  }
+
+  /* A trader of `from` sets out from the stock `src` to the stock `dst`. */
+  protected newShipment(from: number, to: number, src: Inventory, dst: Inventory,
+                        res: ResourceType, count: number): TradeShipment {
+    let way = tradeRoute(this.game, src, dst);
+    if (way.length < 2) way = [];
+    const delay = way.length > 0 ? (way.length - 1) * TRADE_TICKS_PER_STEP : this.delay(src, dst);
+    return { from, to, inv: dst.getIndex(), res, count, left: delay, delay, back: false, way };
+  }
+
+  /* Where the trader of a shipment is: the step of his way he left last,
+     the ticks since, and whether he walks home. null for a shipment
+     without a way. For the drawing of the map only. */
+  traderAt(shipment: TradeShipment): { from: MapPos; to: MapPos; ticks: number } | null {
+    const way = shipment.way;
+    if (way.length < 2) return null;
+    const done = Math.max(0, Math.min(shipment.delay - shipment.left, shipment.delay - 1));
+    let step = Math.floor(done / TRADE_TICKS_PER_STEP);
+    const ticks = done - step * TRADE_TICKS_PER_STEP;
+    if (!shipment.back) return { from: way[step], to: way[step + 1], ticks };
+    step = way.length - 1 - step;
+    return { from: way[step], to: way[step - 1], ticks };
   }
 
   /* The player the offer is for says no. */
@@ -397,6 +423,11 @@ export class Trade {
   /* The shipment is there: into a stock of the receiver; back to the sender
      when the receiver has none; lost when the sender has none either. */
   protected arrive(shipment: TradeShipment): void {
+    /* The trader is home after a delivery. */
+    if (shipment.count === 0) {
+      this.shipments.splice(this.shipments.indexOf(shipment), 1);
+      return;
+    }
     const playerIndex = shipment.back ? shipment.from : shipment.to;
     const inventory = this.findStock(playerIndex, shipment.back ? 0 : shipment.inv);
     if (inventory === null) {
@@ -417,11 +448,18 @@ export class Trade {
       if (inventory.getCountOf(shipment.res) >= 50000) this.game.loseResource(shipment.res);
       building.requestedResourceDelivered(shipment.res);
     }
-    this.shipments.splice(this.shipments.indexOf(shipment), 1);
     this.game.getPlayer(playerIndex)!.addNotification(
       MessageType.TypeTradeArrived, building.getPosition(),
       packTradeData(shipment.back ? shipment.to : shipment.from, shipment.res, shipment.count,
                     ResourceType.TypeNone, 0, shipment.back ? 1 : 0));
+    if (shipment.way.length > 0 && !shipment.back) {
+      /* The trader walks home, his bags empty. */
+      shipment.count = 0;
+      shipment.back = true;
+      shipment.left = shipment.delay;
+    } else {
+      this.shipments.splice(this.shipments.indexOf(shipment), 1);
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -460,9 +498,13 @@ export class Trade {
         isInt(s.from, 0, 3) && isInt(s.to, 0, 3) && s.from !== s.to &&
         this.game.getPlayer(s.from) !== null && this.game.getPlayer(s.to) !== null &&
         isInt(s.inv, 0, 0xffff) &&
-        isInt(s.res, 0, TRADE_RESOURCE_COUNT - 1) && isInt(s.count, 1, TRADE_MAX_AMOUNT) &&
-        isInt(s.delay, TRADE_DELAY_BASE, TRADE_DELAY_MAX) && isInt(s.left, 1, s.delay) &&
-        typeof s.back === 'boolean';
+        isInt(s.res, 0, TRADE_RESOURCE_COUNT - 1) &&
+        typeof s.back === 'boolean' && Array.isArray(s.way) &&
+        (s.way.length === 0
+          ? isInt(s.count, 1, TRADE_MAX_AMOUNT) && isInt(s.delay, TRADE_DELAY_BASE, TRADE_DELAY_MAX)
+          : this.wayIsValid(s.way) && isInt(s.count, s.back ? 0 : 1, TRADE_MAX_AMOUNT) &&
+            s.delay === (s.way.length - 1) * TRADE_TICKS_PER_STEP) &&
+        isInt(s.left, 1, s.delay);
       if (ok) {
         shipments.push(s);
       } else {
@@ -493,6 +535,17 @@ export class Trade {
     return problems;
   }
 
+  /* Whether a way of a save is one: positions of the map, each a step from
+     the one before. */
+  protected wayIsValid(way: MapPos[]): boolean {
+    if (way.length < 2 || way.length > TRADE_ROUTE_MAX + 1) return false;
+    const map = this.game.getMap();
+    const size = map.getCols() * map.getRows();
+    if (!isInt(way[0], 0, size - 1)) return false;
+    const again = routeFromText(this.game, way[0], routeToText(this.game, way));
+    return again !== null && again.length === way.length && again.every((p, i) => p === way[i]);
+  }
+
   /* Every number of the state, for the hash of net/hash.ts. */
   mixInto(mix: (v: number) => void): void {
     mix(this.nextId);
@@ -505,6 +558,8 @@ export class Trade {
     for (const s of this.shipments) {
       mix(s.from); mix(s.to); mix(s.inv); mix(s.res); mix(s.count); mix(s.left);
       mix(s.delay); mix(s.back ? 1 : 0);
+      mix(s.way.length);
+      for (const p of s.way) mix(p);
     }
   }
 
@@ -536,6 +591,10 @@ export class Trade {
       w.value('left').write(s.left);
       w.value('delay').write(s.delay);
       w.value('back').write(s.back ? 1 : 0);
+      if (s.way.length > 0) {
+        w.value('way').write(s.way[0]);
+        w.value('way').write(routeToText(this.game, s.way));
+      }
     });
   }
 
@@ -571,6 +630,10 @@ export class Trade {
         left: r.value('left').readInt(),
         delay: r.value('delay').readInt(),
         back: r.value('back').readInt() !== 0,
+        /* A way that does not read back is caught by countProblems. */
+        way: r.hasValue('way')
+          ? routeFromText(this.game, r.value('way').at(0).readInt(), r.value('way').at(1).readString()) ?? [-1]
+          : [],
       });
     }
   }

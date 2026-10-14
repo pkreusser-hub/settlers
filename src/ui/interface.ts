@@ -64,6 +64,7 @@ import { NotificationBox } from './notification';
 import type { MinimapGame } from './minimap';
 import { PanelBar } from './panel';
 import { PopupBox, PopupBoxType } from './popup';
+import { prefBool, prefNumber, prefSetBool, prefSetNumber, prefSetString, prefString } from './prefs';
 import { Translation } from './translation';
 import { Viewport, ViewportLayer } from './viewport';
 
@@ -161,14 +162,25 @@ export interface InterfaceSpriteLoc {
 const advancedBoxWidth = 360;
 const advancedBoxHeight = 256;
 
-// TODO(savegame): settings.h/.cc (class Settings, the config file) is not
-// ported. settingsGet() gives the default value, as Settings::get() does for
-// a setting that is not in the file, and settingsSet() does nothing.
-function settingsGet<T>(_section: string, _key: string, defaultValue: T): T {
+// PORT: settings.h/.cc (class Settings, the config file) is not ported. The
+// settings are preferences of this browser instead (prefs.ts): one
+// localStorage key per setting, "settlers.pref.<section>.<key>".
+// settingsGet() gives the default value for a setting that was never
+// stored, as Settings::get() does for one that is not in the file.
+function settingsGet<T>(section: string, key: string, defaultValue: T): T {
+  const name = `${section}.${key}`;
+  if (typeof defaultValue === 'boolean') return prefBool(name, defaultValue) as T;
+  if (typeof defaultValue === 'number') return prefNumber(name, defaultValue) as T;
+  if (typeof defaultValue === 'string') return prefString(name, defaultValue) as T;
   return defaultValue;
 }
 
-function settingsSet(_section: string, _key: string, _value: unknown): void {}
+function settingsSet(section: string, key: string, value: unknown): void {
+  const name = `${section}.${key}`;
+  if (typeof value === 'boolean') prefSetBool(name, value);
+  else if (typeof value === 'number') prefSetNumber(name, value);
+  else if (typeof value === 'string') prefSetString(name, value);
+}
 
 // PORT: the values of the attack box. The C++ keeps them in the Player
 // (building_attacked, knights_attacking, attacking_knights,
@@ -615,7 +627,7 @@ export class Interface extends GuiObject implements GameManagerHandler {
 
   /* Settings kept between the runs (Settings): the options of the options
      and advanced boxes. */
-  // TODO(savegame): there is no config file, every setting has its default.
+  // PORT: read from the preferences of this browser (see settingsGet()).
   applySettings(): void {
     const audio = Audio.getInstance();
     const music = audio.getMusicPlayer();
@@ -642,7 +654,9 @@ export class Interface extends GuiObject implements GameManagerHandler {
     this.invertScrolling = settingsGet('advanced', 'invert_scrolling', false);
     this.largeNumbers = settingsGet('advanced', 'large_numbers', false);
     this.stockBoxOccupied = settingsGet('advanced', 'stock_box_occupied', false);
-    this.autosaveMinutes = settingsGet('advanced', 'autosave', 5);
+    /* Only a step of nextAutosaveInterval(). */
+    const autosave = settingsGet('advanced', 'autosave', 5);
+    this.autosaveMinutes = [0, 5, 10, 20, 30, 60].includes(autosave) ? autosave : 5;
     Translation.getInstance().setLanguage(settingsGet('advanced', 'language', ''));
 
     /* Data source of each category, by name (DOS, Amiga, Custom). */
@@ -652,13 +666,20 @@ export class Interface extends GuiObject implements GameManagerHandler {
     // named.
   }
 
-  // TODO(savegame): there is no config file, nothing is stored.
+  // PORT: not in the C++. A page that was muted for a test
+  // (`settlers.devMute`, see main.ts) does not store that as the player's
+  // choice of sound and music.
+  soundSettingsLocked = false;
+
+  // PORT: stored in the preferences of this browser (see settingsSet()). A
+  // value that did not change is not written again, so main.ts also calls
+  // this on a timer, for the options changed by keys.
   storeSettings(): void {
     const audio = Audio.getInstance();
     const music = audio.getMusicPlayer();
-    if (music) settingsSet('options', 'music', music.isEnabled());
+    if (music && !this.soundSettingsLocked) settingsSet('options', 'music', music.isEnabled());
     const sound = audio.getSoundPlayer();
-    if (sound) settingsSet('options', 'sound', sound.isEnabled());
+    if (sound && !this.soundSettingsLocked) settingsSet('options', 'sound', sound.isEnabled());
     const volume = audio.getVolumeController();
     if (volume !== null) {
       settingsSet(
@@ -682,7 +703,7 @@ export class Interface extends GuiObject implements GameManagerHandler {
       settingsSet('data', 'music', this.getDataSourceName(2));
     }
 
-    // TODO(savegame): settings.save()
+    // PORT: settings.save(): each setting was written where it was set.
   }
 
   /* Box of the advanced options; closing it closes the options too. */
@@ -1694,6 +1715,15 @@ export class Interface extends GuiObject implements GameManagerHandler {
       this.returnTimeout -= tickDiff;
     }
 
+    // PORT: not in the C++. The minimap of the page shows some messages in
+    // its own way: it sees the queue before the messages that the message
+    // level hides are dropped. The observers only read.
+    if (this.player !== null && this.player.hasMessage() && this.messageObservers.length > 0) {
+      for (const message of this.player.messages) {
+        for (const observer of this.messageObservers) observer(message);
+      }
+    }
+
     /* Handle newly enqueued messages */
     if (this.player !== null && this.player.hasMessage()) {
       this.player.dropMessage();
@@ -1731,6 +1761,10 @@ export class Interface extends GuiObject implements GameManagerHandler {
   // hooks only read the game and call the methods of the interface, which
   // issue commands.
   keyHooks: ((key: number, modifier: number) => boolean)[] = [];
+  // PORT: not in the C++. Called with each message in the queue of the
+  // player when a new one came in (see update()); the same message is
+  // passed again while it waits.
+  messageObservers: ((message: Message) => void)[] = [];
   // PORT: not in the C++. The registry of the menus of the page
   // (ui/menu/kit.ts) is the one popup hook: asked by openPopup() and, with
   // fromCanvas, by the canvas popup when it switches to another box. True:

@@ -1,0 +1,135 @@
+/* The minimap of the page (minimap-panel.ts): a panel in the bottom right
+   corner. Not part of Freeserf. The base look is .gx and .gx-box of
+   build-menu.css; minimap-panel.ts sets `bottom` so the panel stays clear
+   of the panel bar of the game. */
+
+.mm-panel {
+  position: fixed;
+  right: 8px;
+  bottom: 8px;
+  z-index: 5;
+  max-width: calc(100vw - 16px);
+  box-sizing: border-box;
+  user-select: none;
+}
+
+.mm-panel[hidden] {
+  display: none;
+}
+
+.mm-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15em;
+  padding: 0.1em;
+}
+
+/* Open, the picture gives the width: the head wraps and never makes the
+   panel wider than the picture. */
+.mm-panel:not(.mm-closed) .mm-head {
+  width: 0;
+  min-width: 100%;
+  box-sizing: border-box;
+}
+
+.mm-toggle {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.4em;
+  min-height: 2em;
+  padding: 0 0.5em;
+  font-weight: 600;
+  color: var(--gx-title);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+}
+
+.mm-toggle:hover {
+  background: var(--gx-btn);
+}
+
+/* Points down while the minimap is open, right while it is closed. */
+.mm-mark {
+  width: 0;
+  height: 0;
+  border-left: 0.32em solid transparent;
+  border-right: 0.32em solid transparent;
+  border-top: 0.45em solid var(--gx-text-dim);
+}
+
+.mm-closed .mm-mark {
+  transform: rotate(-90deg);
+}
+
+.mm-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.15em;
+}
+
+.mm-tools[hidden],
+.mm-body[hidden] {
+  display: none;
+}
+
+.mm-btn {
+  min-width: 2em;
+  min-height: 2em;
+  padding: 0 0.5em;
+  color: var(--gx-text);
+  background: var(--gx-btn);
+  border: 1px solid var(--gx-line);
+  border-radius: 4px;
+}
+
+.mm-btn:hover {
+  background: var(--gx-btn-hover);
+}
+
+.mm-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.mm-body {
+  position: relative;
+  line-height: 0;
+  border-top: 1px solid var(--gx-line-soft);
+}
+
+.gx .mm-canvas {
+  display: block;
+  /* The picture has the pixels of the display: nothing to magnify. */
+  image-rendering: auto;
+  border-radius: 0 0 5px 5px;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.mm-canvas:focus-visible {
+  outline: 2px solid var(--gx-accent);
+  outline-offset: -2px;
+}
+
+/* The corner away from the corner of the page: drag to resize. */
+.mm-grip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  touch-action: none;
+  background:
+    linear-gradient(135deg, var(--gx-text) 0 2px, transparent 2px 4px, var(--gx-text) 4px 6px, transparent 6px 8px, var(--gx-text) 8px 10px, transparent 10px);
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+  opacity: 0.7;
+}
+
+.mm-grip:hover {
+  opacity: 1;
+}

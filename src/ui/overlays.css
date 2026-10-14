@@ -1,0 +1,67 @@
+/* The legend of the map overlays (hud.ts, map-overlays.ts): a small box
+   under the strip of page controls. Not part of Freeserf. hud.ts sets
+   `top` to the lower edge of the strip. */
+
+.ov-legend {
+  position: fixed;
+  top: 52px;
+  right: 8px;
+  z-index: 5;
+  max-width: min(17em, calc(100vw - 16px));
+  padding: 0.35em 0.6em 0.45em;
+  box-sizing: border-box;
+  user-select: none;
+  /* The map stays usable under it. */
+  pointer-events: none;
+}
+
+.ov-legend[hidden] {
+  display: none;
+}
+
+.ov-sec + .ov-sec {
+  margin-top: 0.4em;
+  padding-top: 0.3em;
+  border-top: 1px solid var(--gx-line-soft);
+}
+
+.ov-head {
+  font-size: 0.72em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gx-text-faint);
+}
+
+.ov-list {
+  margin: 0.15em 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ov-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  min-height: 1.5em;
+  pointer-events: auto;
+}
+
+.gx .ov-swatch {
+  width: 28px;
+  height: 16px;
+  image-rendering: auto;
+  border-radius: 2px;
+}
+
+.gx .bd-icon {
+  width: 16px;
+  height: 16px;
+  margin: 0 6px;
+  image-rendering: auto;
+}
+
+.ov-note {
+  margin-top: 0.2em;
+  font-size: 0.85em;
+  color: var(--gx-text-dim);
+}

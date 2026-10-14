@@ -38,6 +38,8 @@ import { EventLoop } from './ui/event-loop';
 import { Graphics } from './ui/gfx';
 import { Hud } from './ui/hud';
 import { Interface } from './ui/interface';
+import { initMapOverlays } from './ui/map-overlays';
+import { initMinimapPanel } from './ui/minimap-panel';
 import { initStockPanel } from './ui/stock-panel';
 import { Translation } from './ui/translation';
 import { Video } from './ui/video';
@@ -133,10 +135,18 @@ async function main(): Promise<boolean> {
       // No storage: not muted.
     }
     if (mute) {
+      /* The mute wins over the stored choice and is not stored as one. */
+      iface.soundSettingsLocked = true;
       audio.getMusicPlayer()?.enable(false);
       audio.getSoundPlayer()?.enable(false);
     }
   }
+  // PORT: not in the C++, which stores the settings when the program ends.
+  // A page has no such moment it can count on: the options changed by keys
+  // (S, M) are stored a moment later and when the page is hidden. Nothing
+  // is written while nothing changed (prefs.ts).
+  window.setInterval(() => iface.storeSettings(), 2000);
+  window.addEventListener('pagehide', () => iface.storeSettings());
   // PORT: no -f option and no "fullscreen" setting: gfx.set_fullscreen(true)
   // is never called here.
 
@@ -153,6 +163,13 @@ async function main(): Promise<boolean> {
   initBuildMenu(iface, gameManager);
   initAlerts(iface, gameManager);
   initStockPanel(iface, gameManager);
+  // PORT: not in the C++. The overlays of the map view (territory, traffic,
+  // status badges) and the minimap in the corner; both only read the game.
+  initMapOverlays(iface);
+  const minimapPanel = initMinimapPanel(iface);
+  if (import.meta.env.DEV) {
+    (window as unknown as { settlers: Record<string, unknown> }).settlers.minimap = minimapPanel;
+  }
 
   // PORT: not in the C++. The lobby lies over the game: a solo game goes on
   // as above, an online game replaces the current game when it starts.

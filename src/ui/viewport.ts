@@ -32,8 +32,11 @@ import { Color, Frame, Graphics } from './gfx';
 import { GuiObject } from './gui';
 import { mapBuildingSprite } from './interface';
 import type { Interface } from './interface';
+import { drawBadges, drawTerritory, drawTraffic, dropTerritoryTiles, fillGrid } from './map-overlays';
+import type { OverlayGrid } from './map-overlays';
 import { PixelScaler } from './pixel-scale';
 import { PopupBoxType } from './popup';
+import { prefBool, prefSetBool } from './prefs';
 
 const MAP_TILE_WIDTH = 32;
 const MAP_TILE_HEIGHT = 20;
@@ -535,6 +538,11 @@ export enum ViewportLayer {
   LayerCursor = 1 << 4,
   LayerGrid = 1 << 5,
   LayerBuilds = 1 << 6,
+  // PORT: not in the C++. The overlays of map-overlays.ts: the land of the
+  // players or teams, the load of the roads, the status of the buildings.
+  LayerTerritory = 1 << 7,
+  LayerTraffic = 1 << 8,
+  LayerBadges = 1 << 9,
   LayerAll = LayerLandscape |
              LayerPaths |
              LayerObjects |
@@ -550,6 +558,18 @@ export interface ViewportLandscapeTile {
   lastUse: number;
 }
 type TilesMap = Map<number, ViewportLandscapeTile>;
+
+// PORT: not in the C++. The layers that are a choice of the player, with
+// the name of their preference and whether they are on at the first visit.
+const storedLayers: { layer: ViewportLayer; pref: string; fallback: boolean }[] = [
+  { layer: ViewportLayer.LayerBuilds, pref: 'view.spots', fallback: false },
+  { layer: ViewportLayer.LayerTerritory, pref: 'view.territory', fallback: false },
+  { layer: ViewportLayer.LayerTraffic, pref: 'view.traffic', fallback: false },
+  { layer: ViewportLayer.LayerBadges, pref: 'view.badges', fallback: true },
+];
+
+const overlayLayers = ViewportLayer.LayerTerritory | ViewportLayer.LayerTraffic |
+                      ViewportLayer.LayerBadges;
 
 export class Viewport extends GuiObject implements MapHandler {
   static Layer = ViewportLayer;
@@ -574,9 +594,19 @@ export class Viewport extends GuiObject implements MapHandler {
 
   switchLayer(layer: ViewportLayer): void {
     this.layers ^= layer;
+    // PORT: not in the C++. The layers the player switches are kept for
+    // the next game and the next visit (prefs.ts).
+    for (const stored of storedLayers) {
+      if (layer & stored.layer) prefSetBool(stored.pref, (this.layers & stored.layer) !== 0);
+    }
     // PORT: not in the C++, where the next animation step draws the view
     // again; a paused game has none.
     this.setRedraw();
+  }
+
+  // PORT: not in the C++. For the buttons of the page.
+  setLayer(layer: ViewportLayer, on: boolean): void {
+    if (this.hasLayer(layer) !== on) this.switchLayer(layer);
   }
 
   // PORT: not in the C++. For the "Spots" button of the page (see hud.ts).
@@ -2538,6 +2568,25 @@ export class Viewport extends GuiObject implements MapHandler {
     }
   }
 
+  // PORT: not in the C++. The points of the map in and around the view for
+  // the overlays, with the height of each on the screen (fillGrid of
+  // map-overlays.ts). The arrays are kept from draw to draw.
+  protected gridStore = { pos: new Int32Array(0), y: new Int16Array(0) };
+
+  protected overlayGrid(): OverlayGrid {
+    const [basePos, xOff, yOff] = this.getOffset();
+    const grid = fillGrid(this.map, basePos, xOff, yOff, this.width, this.height, this.gridStore);
+    grid.scale = Graphics.getInstance().getMapScale();
+    return grid;
+  }
+
+  // PORT: not in the C++. The view in pixels of the map, for the minimap
+  // of the page (minimap-panel.ts): the offset of its top left corner and
+  // its size.
+  getViewRect(): [number, number, number, number] {
+    return [this.offsetX, this.offsetY, this.width, this.height];
+  }
+
   protected override internalDraw(): void {
     if (this.map == null) {
       return;
@@ -2550,10 +2599,32 @@ export class Viewport extends GuiObject implements MapHandler {
       this.drawBaseGridOverlay(new Color(0xcf, 0x63, 0x63));
       this.drawHeightGridOverlay(new Color(0xef, 0xef, 0x8f));
     }
+    // PORT: not in the C++. The overlays (map-overlays.ts): the land under
+    // the roads, the load on them, the badges over the buildings. With all
+    // three off nothing is computed and nothing is kept.
+    const overlays = this.layers & overlayLayers;
+    const context = overlays ? this.frame!.getContext() : null;
+    const game = this.interface.getGame();
+    const player = this.interface.getPlayer();
+    if (context !== null && game && (overlays & ViewportLayer.LayerTerritory)) {
+      drawTerritory(context, this.offsetX, this.offsetY, this.width, this.height,
+                    Graphics.getInstance().getMapScale(), game, player);
+    } else {
+      dropTerritoryTiles();
+    }
     if (this.layers & ViewportLayer.LayerPaths) {
       this.drawPathsAndBorders();
     }
+    const grid = context !== null && game &&
+      (overlays & (ViewportLayer.LayerTraffic | ViewportLayer.LayerBadges))
+      ? this.overlayGrid() : null;
+    if (grid !== null && (overlays & ViewportLayer.LayerTraffic)) {
+      drawTraffic(context!, grid, game, player);
+    }
     this.drawGameObjects(this.layers);
+    if (grid !== null && (overlays & ViewportLayer.LayerBadges)) {
+      drawBadges(context!, grid, game, player);
+    }
     if (this.layers & ViewportLayer.LayerCursor) {
       this.drawMapCursor();
     }
@@ -2862,6 +2933,10 @@ export class Viewport extends GuiObject implements MapHandler {
     this.map = _map;
     this.map.addChangeHandler(this);
     this.layers = ViewportLayer.LayerAll;
+    // PORT: not in the C++. The layers of the last visit.
+    for (const stored of storedLayers) {
+      if (prefBool(stored.pref, stored.fallback)) this.layers |= stored.layer;
+    }
 
     this.offsetX = 0;
     this.offsetY = 0;

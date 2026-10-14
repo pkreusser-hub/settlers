@@ -6,6 +6,7 @@
 
 import { TICK_LENGTH } from './freeserf';
 import { Frame, Graphics, Image } from './gfx';
+import { legacyValue, prefBool, prefNumber, prefSetBool, prefSetNumber } from './prefs';
 import { Video } from './video';
 
 export enum EventType {
@@ -868,16 +869,21 @@ export class EventLoopDOM extends EventLoop {
     const ratio = window.devicePixelRatio || 1;
     let ui = Math.max(1, Math.round(2 * ratio));
     let map = Math.max(1, Math.round(1.5 * ratio));
+    /* The key these three had before the preferences had one place
+       (prefs.ts): read when the new ones were never set. */
     try {
-      const stored = JSON.parse(localStorage.getItem('settlers.scales') ?? 'null');
+      const stored = JSON.parse(legacyValue('settlers.scales') ?? 'null');
       if (stored !== null && typeof stored.ui === 'number' && typeof stored.map === 'number') {
         ui = stored.ui;
         map = stored.map;
         this.smooth = stored.smooth === true;
       }
     } catch {
-      // No storage: the defaults.
+      // Not readable: the defaults.
     }
+    ui = prefNumber('uiScale', ui, 0.1, 100);
+    map = prefNumber('mapScale', map, 0.1, 100);
+    this.smooth = prefBool('smooth', this.smooth);
     const max = this.maxUiScale();
     const allowed = EventLoopDOM.uiScales.filter((v) => v <= max);
     this.uiScale = nearest(allowed.length > 0 ? allowed : [1], ui);
@@ -885,14 +891,13 @@ export class EventLoopDOM extends EventLoop {
   }
 
   protected storeScales(): void {
-    try {
-      localStorage.setItem(
-        'settlers.scales',
-        JSON.stringify({ ui: this.uiScale, map: this.mapScale, smooth: this.smooth }),
-      );
-    } catch {
-      // No storage: the scales last until the page is closed.
-    }
+    /* Without storage the scales last until the page is closed. Not
+       before they were loaded: a resize at the start would store the
+       defaults over the choice of the last visit. */
+    if (!this.scalesLoaded) return;
+    prefSetNumber('uiScale', this.uiScale);
+    prefSetNumber('mapScale', this.mapScale);
+    prefSetBool('smooth', this.smooth);
   }
 
   protected scalesLoaded = false;

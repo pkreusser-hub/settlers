@@ -40,7 +40,7 @@ interface Alert {
 /* Buildings that ask for a worker of their own when finished: the types
    with a serf in the table of Building::request_serf_if_needed, and the
    storehouse, which asks for a transporter (Building::update, TypeStock). */
-function wantsWorker(type: BuildingType): boolean {
+export function wantsWorker(type: BuildingType): boolean {
   switch (type) {
     case BuildingType.TypeNone:
     case BuildingType.TypeHut:
@@ -53,7 +53,7 @@ function wantsWorker(type: BuildingType): boolean {
   }
 }
 
-function isGuard(type: BuildingType): boolean {
+export function isGuard(type: BuildingType): boolean {
   return (
     type === BuildingType.TypeHut ||
     type === BuildingType.TypeTower ||

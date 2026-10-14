@@ -32,6 +32,7 @@ import { SerfType } from '../game/serf';
 import { TICKS_PER_SEC } from './freeserf';
 import type { Interface } from './interface';
 import { blurActive, el, leftStack, resourceCanvas, spriteCanvas } from './overlay-dom';
+import { legacyValue, prefSetString, prefString } from './prefs';
 import { resourceName } from './production';
 
 /* Game ticks in a second of play at normal speed: Game::update adds the
@@ -51,7 +52,10 @@ const UNEMPLOYED = RESOURCES;
 const KNIGHTS = RESOURCES + 1;
 const VALUES = KNIGHTS + 5;
 
-const storageKey = 'settlers.stockPanel';
+/* The preference "stockPanel" (prefs.ts): "open" or "closed". The key it had
+   before is read when the preference was never set. */
+const prefName = 'stockPanel';
+const legacyKey = 'settlers.stockPanel';
 
 const R = ResourceType;
 
@@ -127,12 +131,7 @@ export class StockPanel {
     this.root.append(this.toggleButton, this.body);
     leftStack().prepend(this.root);
 
-    let stored: string | null = null;
-    try {
-      stored = localStorage.getItem(storageKey);
-    } catch {
-      stored = null;
-    }
+    const stored = prefString(prefName, legacyValue(legacyKey) ?? 'open');
     this.setExpanded(stored !== 'closed', false);
 
     window.addEventListener('resize', () => {
@@ -152,13 +151,8 @@ export class StockPanel {
     this.toggleButton.title = expanded ? 'Hide the stock' : 'Show the stock';
     this.root.classList.toggle('st-closed', !expanded);
     this.body.hidden = !expanded;
-    if (remember) {
-      try {
-        localStorage.setItem(storageKey, expanded ? 'open' : 'closed');
-      } catch {
-        /* No storage: the panel opens the next time. */
-      }
-    }
+    /* Without storage the panel opens the next time. */
+    if (remember) prefSetString(prefName, expanded ? 'open' : 'closed');
     if (expanded) this.update();
   }
 

@@ -557,5 +557,50 @@ hut3.setUnderAttack();
 exec({ type: 'upgradeBuilding', pos: hut3Pos });
 check('a building that was attacked before can be upgraded', hut3.isUpgrading());
 
+// ---------------------------------------------------------------------------
+// Regression: an unfinished castle that burns (a building next to it is
+// captured, or its land is lost: Game.demolishBuilding_) took its inventory
+// with it only when it was finished. The inventory that was left behind
+// crashed Inventory.spawnSerfGeneric() about 1500 updates later, when the
+// player's next serf was born into a building that no longer existed.
+for (const wait of [0, 1, 50, 400]) {
+  const g = GameInfo.getMission(0)!.instantiate()! as any;
+  g.rnd = new Random(0x1234, 0x5678, 0x9abc);
+  const p = g.getPlayer(0);
+  let at = -1;
+  for (let pos = 0; pos < size && at < 0; pos++) {
+    if (g.canBuildCastle(pos, p)) at = pos;
+  }
+  executeCommand(g, 0, { type: 'buildCastle', pos: at });
+  for (let i = 0; i < wait; i++) g.update();
+  const castle = g.getBuildingAtPos(at);
+  const done = castle.isDone();
+  const index = castle.getIndex();
+  g.demolishBuilding_(at);
+  let error = '';
+  let updates = 0;
+  let problems = 0;
+  try {
+    for (; updates < 6000; updates++) {
+      g.update();
+      if (updates % 1000 === 999) {
+        warnings.length = 0;
+        problems += IntegrityCheck.run(g as Game, false);
+      }
+    }
+  } catch (e) {
+    error = String(e);
+  }
+  const left = g.getPlayerInventories(p).length;
+  /* The computer player's castle may have taken the free numbers. */
+  const stale = [...g.inventories].filter((inv: any) =>
+    g.getBuilding(inv.getBuildingIndex()) === null || g.getBuilding(inv.getBuildingIndex()).getInventory() !== inv).length;
+  check(`a castle ${done ? 'that is finished' : `under construction (${wait} updates old)`} burns: ` +
+        `${error === '' ? `${updates} updates without an error` : error}, the player has ${left} inventories left, ` +
+        `${stale} inventories without a building, ${problems} integrity problems, the player ${p.isDefeated() ? 'has' : 'has not'} lost his castle`,
+        error === '' && left === 0 && stale === 0 && problems === 0 && p.isDefeated() &&
+        (g.getBuilding(index) === null || g.getBuilding(index).getPosition() !== at || g.getBuilding(index).getOwner() !== 0));
+}
+
 print(failed === 0 ? `PASS: ${checks} checks` : `FAILED: ${failed} of ${checks} checks`);
 process.exit(failed === 0 ? 0 : 1);

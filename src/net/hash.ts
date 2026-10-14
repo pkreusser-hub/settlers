@@ -20,6 +20,8 @@ interface Hashable {
     knightMorale: number;
     goldDeposited: number;
     castleKnights: number;
+    // EXT: knight controls.
+    extRally: number;
     getSerfCount(type: number): number;
   }>;
   flags: Iterable<{
@@ -47,6 +49,8 @@ interface Hashable {
     extCap: number;
     upgradeTo: number;
     upgradeTimer: number;
+    // EXT: knight controls.
+    extStance: number;
     stock: { type: number; available: number; requested: number; maximum: number }[];
   }>;
   serfs: Iterable<{
@@ -92,6 +96,12 @@ export function stateHash(game: Game): number {
     mix(p.goldDeposited);
     mix(p.castleKnights);
     for (let t = 0; t < SERF_TYPES; t++) mix(p.getSerfCount(t));
+    // EXT: knight controls. The rally point, only when one is set, so that
+    // a game without one hashes as before.
+    if (p.extRally !== 0) {
+      mix(0x45585435); /* 'EXT5' */
+      mix(p.extRally);
+    }
   }
 
   for (const s of g.serfs) {
@@ -123,6 +133,11 @@ export function stateHash(game: Game): number {
       mix(b.stock[2].available);
       mix(b.stock[2].requested);
       mix(b.stock[2].maximum);
+    }
+    // EXT: knight controls. The stance, only when it is not Normal.
+    if (b.extStance !== 0) {
+      mix(0x45585436); /* 'EXT6' */
+      mix(b.extStance);
     }
   }
 

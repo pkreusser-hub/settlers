@@ -273,6 +273,29 @@ export enum UpgradeRefusal {
   NoRoom,
 }
 
+// EXT: knight controls. The stance of a guard hut, tower or fortress.
+export enum BuildingStance {
+  /* The occupation sliders of the player decide the garrison, and the
+     knights above the minimum go to an attack. */
+  Normal = 0,
+  /* The building wants its full garrison and gives no knight to an
+     attack. */
+  Hold = 1,
+}
+
+// EXT: knight controls. The knights a guard hut, tower or fortress wants
+// on Hold or as the rally point: the highest occupation level of
+// Building::update_military, or that level reduced while the player cycles
+// his knights. 0 for every other building.
+export function fullGarrison(type: BuildingType, reduced = false): number {
+  switch (type) {
+    case BuildingType.TypeHut: return reduced ? 2 : 3;
+    case BuildingType.TypeTower: return reduced ? 4 : 6;
+    case BuildingType.TypeFortress: return reduced ? 8 : 12;
+    default: return 0;
+  }
+}
+
 // EXT: end of the new tables.
 // ---------------------------------------------------------------------------
 
@@ -327,6 +350,9 @@ export class Building extends GameObject {
   // (0 before).
   upgradeTo: BuildingType;
   upgradeTimer: number;
+  // EXT: knight controls. The stance of a military building (saved as
+  // "ext_stance" when it is not Normal).
+  extStance: BuildingStance;
 
   constructor(game: Game, index: number) {
     super(game, index);
@@ -366,6 +392,7 @@ export class Building extends GameObject {
     this.extCap = 0;
     this.upgradeTo = BuildingType.TypeNone;
     this.upgradeTimer = 0;
+    this.extStance = BuildingStance.Normal;
   }
 
   getPosition(): MapPos {
@@ -636,6 +663,12 @@ export class Building extends GameObject {
 
     this.burning = true;
 
+    // EXT: knight controls. A building that burns has no stance and is no
+    // rally point. Every way to lose a building but a capture comes
+    // through here.
+    this.extStance = BuildingStance.Normal;
+    this.game.getPlayer(this.owner)?.extBuildingLost(this.index);
+
     /* Remove lost gold stock from total count. */
     if (
       !this.constructing &&
@@ -671,6 +704,24 @@ export class Building extends GameObject {
         }
       }
     } else {
+      // PORT: the original deletes the inventory of a finished castle only.
+      // An unfinished castle has one too (Game::build_castle), and it was
+      // left behind with the index of a building that no longer exists:
+      // Player::update went on spawning serfs into it and
+      // Serf::init_generic read the deleted building (a null pointer in
+      // the C++ as well). The inventory goes with the castle, and the
+      // serfs that wait in it escape or die as they do in a finished one.
+      if (this.type === BuildingType.TypeCastle && this.inventory != null) {
+        this.game.deleteInventory(this.inventory);
+        this.inventory = null;
+
+        let escapingSerfs = 0;
+        for (const serf of this.game.getSerfsAtPos(this.pos)) {
+          if (serf.buildingDeleted(this.pos, escapingSerfs < 12)) {
+            escapingSerfs++;
+          }
+        }
+      }
       this.active = false;
     }
 
@@ -1160,6 +1211,35 @@ export class Building extends GameObject {
   }
 
   // -------------------------------------------------------------------------
+  // EXT: knight controls.
+
+  getStance(): BuildingStance {
+    return this.extStance;
+  }
+  setStance(stance: BuildingStance): void {
+    this.extStance = stance;
+  }
+  isHolding(): boolean {
+    return this.extStance === BuildingStance.Hold;
+  }
+
+  /* The rally point asks for one more knight while it has room. Whether
+     one is on his way now. Player::extRallyTakesKnight calls it for a
+     building that wants a knight itself. */
+  extRequestRallyKnight(): boolean {
+    if (this.constructing || this.burning || this.serfRequestFailed) return false;
+    const player = this.game.getPlayer(this.owner)!;
+    const wanted = fullGarrison(this.type, player.reducedKnightLevel());
+    if (this.stock[0].requested + this.stock[0].available >= wanted) return false;
+    if (!this.sendSerfToBuilding(SerfType.TypeNone, ResourceType.TypeNone,
+                                 ResourceType.TypeNone)) {
+      this.serfRequestFailed = true;
+      return false;
+    }
+    return true;
+  }
+
+  // -------------------------------------------------------------------------
   // EXT: upgrade in place (guard hut to tower to fortress).
 
   getUpgradeTo(): BuildingType {
@@ -1396,6 +1476,10 @@ export class Building extends GameObject {
       this.stock[2].requested = reader.value('stock[2].requested').readInt();
       this.stock[2].maximum = reader.value('stock[2].maximum').readInt();
     }
+    if (reader.hasValue('ext_stance')) {
+      this.extStance = reader.value('ext_stance').readInt() === BuildingStance.Hold
+        ? BuildingStance.Hold : BuildingStance.Normal;
+    }
 
     if (reader.hasValue('inventory')) {
       let inventoryIndex: number;
@@ -1459,6 +1543,9 @@ export class Building extends GameObject {
       writer.value('stock[2].available').write(this.stock[2].available);
       writer.value('stock[2].requested').write(this.stock[2].requested);
       writer.value('stock[2].maximum').write(this.stock[2].maximum);
+    }
+    if (this.extStance !== BuildingStance.Normal) {
+      writer.value('ext_stance').write(this.extStance);
     }
 
     if (this.inventory !== null) {
@@ -2024,6 +2111,11 @@ export class Building extends GameObject {
 
     const player = this.game.getPlayer(this.getOwner())!;
     let maxOccLevel = (player.getKnightOccupation(this.threatLevel) >> 4) & 0xf;
+    // EXT: knight controls. A building on Hold and the rally point want
+    // the full garrison, whatever the sliders of the player say.
+    if (this.extStance === BuildingStance.Hold || player.extRally === this.index) {
+      maxOccLevel = 4;
+    }
     if (player.reducedKnightLevel()) maxOccLevel += 5;
     if (maxOccLevel > 9) maxOccLevel = 9;
 
@@ -2051,11 +2143,18 @@ export class Building extends GameObject {
     const presentKnights = stock[0].available;
     if (totalKnights < neededOccupants) {
       if (!this.serfRequestFailed) {
-        this.serfRequestFailed = !this.sendSerfToBuilding(
-          SerfType.TypeNone,
-          ResourceType.TypeNone,
-          ResourceType.TypeNone,
-        );
+        // EXT: knight controls. While the rally point has room the next
+        // knight goes there, not here. A building without a knight still
+        // gets its first one (it holds no land before), and so does this
+        // one when no knight can reach the rally point. With no rally
+        // point set this is the request of the original.
+        if (!(totalKnights > 0 && player.extRallyTakesKnight(this))) {
+          this.serfRequestFailed = !this.sendSerfToBuilding(
+            SerfType.TypeNone,
+            ResourceType.TypeNone,
+            ResourceType.TypeNone,
+          );
+        }
       }
     } else if (
       neededOccupants < presentKnights &&

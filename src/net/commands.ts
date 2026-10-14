@@ -11,8 +11,10 @@
 // Importing this module registers the handlers (main.ts imports it).
 
 import { BuildingType } from '../game/building';
-// EXT: for the building controls block at the end of this file.
+// EXT: for the building controls and the knight controls blocks at the end
+// of this file.
 import {
+  BuildingStance,
   isProductionBuilding,
   productionCapSteps,
   productionOutput,
@@ -858,6 +860,92 @@ export function cmdUpgradeBuilding(game: Game, pos: MapPos): void {
 }
 
 // EXT: end of the building controls block.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// EXT: knight controls (not part of Freeserf): the stance of a military
+// building and the rally point of a player. Building.extStance and
+// Player.extRally have the rules. This block is all of it in this file.
+
+/* Why the building at pos takes no stance or cannot be the rally point:
+   'notOwn' no building of the player there (or it burns), 'notMilitary'
+   not a guard hut, tower or fortress, 'notFinished' still a site. */
+type KnightBuildingRefusal = 'notOwn' | 'notMilitary' | 'notFinished';
+
+function knightBuildingRefusal(game: Game, player: Player, pos: MapPos): '' | KnightBuildingRefusal {
+  if (!isPos(game, pos)) return 'notOwn';
+  const building = ownBuildingAt(game, player, pos);
+  if (building === null) return 'notOwn';
+  const type = building.getType();
+  if (type !== BuildingType.TypeHut && type !== BuildingType.TypeTower &&
+      type !== BuildingType.TypeFortress) {
+    return 'notMilitary';
+  }
+  if (!building.isDone()) return 'notFinished';
+  return '';
+}
+
+/* Why the player may not give the building at pos the stance, or ''.
+   'rally': the rally point cannot go on Hold, since it gives its knights
+   to an attack first. */
+export type StanceRefusal = '' | KnightBuildingRefusal | 'rally';
+
+export function stanceRefusal(game: Game, pos: MapPos, player: Player,
+                              stance: BuildingStance): StanceRefusal {
+  const refusal = knightBuildingRefusal(game, player, pos);
+  if (refusal !== '') return refusal;
+  const building = game.getBuildingAtPos(pos)!;
+  if (stance === BuildingStance.Hold && player.extRally === building.getIndex()) return 'rally';
+  return '';
+}
+
+/* Why the player may not make the building at pos his rally point, or ''.
+   'hold': a building on Hold gives no knights to an attack. */
+export type RallyRefusal = '' | KnightBuildingRefusal | 'hold';
+
+export function rallyRefusal(game: Game, pos: MapPos, player: Player): RallyRefusal {
+  const refusal = knightBuildingRefusal(game, player, pos);
+  if (refusal !== '') return refusal;
+  if (game.getBuildingAtPos(pos)!.isHolding()) return 'hold';
+  return '';
+}
+
+/* setBuildingStance { pos, stance }: the stance of the player's own
+   finished guard hut, tower or fortress at pos, a BuildingStance: 0 Normal,
+   1 Hold. Explicit, not a toggle. */
+register('setBuildingStance', (game, player, cmd) => {
+  if (!isPos(game, cmd.pos)) return;
+  if (!isInt(cmd.stance, BuildingStance.Normal, BuildingStance.Hold)) return;
+  if (stanceRefusal(game, cmd.pos, player, cmd.stance) !== '') return;
+  game.getBuildingAtPos(cmd.pos)!.setStance(cmd.stance);
+});
+
+export function cmdSetBuildingStance(game: Game, pos: MapPos, stance: BuildingStance): void {
+  issue(game, { type: 'setBuildingStance', pos, stance });
+}
+
+/* setRallyPoint { pos }: the player's own finished guard hut, tower or
+   fortress at pos becomes his rally point, in place of the one he had. */
+register('setRallyPoint', (game, player, cmd) => {
+  if (!isPos(game, cmd.pos)) return;
+  if (rallyRefusal(game, cmd.pos, player) !== '') return;
+  player.setRally(game.getBuildingAtPos(cmd.pos)!);
+});
+
+export function cmdSetRallyPoint(game: Game, pos: MapPos): void {
+  issue(game, { type: 'setRallyPoint', pos });
+}
+
+/* clearRallyPoint {}: the player has no rally point any more. */
+register('clearRallyPoint', (_game, player) => {
+  player.clearRally();
+});
+
+export function cmdClearRallyPoint(game: Game): void {
+  issue(game, { type: 'clearRallyPoint' });
+}
+
+// EXT: end of the knight controls block.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------

@@ -8,8 +8,10 @@
 
 import {
   Building,
+  BuildingStance,
   BuildingType,
   ProductionHold,
+  fullGarrison,
   UpgradeRefusal,
   isProductionBuilding,
   militaryMaxGold,
@@ -24,9 +26,14 @@ import { BIT_TEST } from '../../game/misc';
 import { ResourceType } from '../../game/resource';
 import { SerfType } from '../../game/serf';
 import {
+  cmdClearRallyPoint,
   cmdSetBuildingCap,
   cmdSetBuildingPaused,
+  cmdSetBuildingStance,
+  cmdSetRallyPoint,
   cmdUpgradeBuilding,
+  rallyRefusal,
+  stanceRefusal,
   upgradeRefusal,
 } from '../../net/commands';
 import { PopupBoxType } from '../popup';
@@ -393,6 +400,9 @@ function militaryState(game: Game, building: Building): string {
     ? 'No knights here yet'
     : `Held by ${plural(count, 'knight', 'knights')}`;
   if (building.isUnderAttack()) text += ', under attack';
+  // EXT (knight controls).
+  if (building.isHolding()) text += ', on Hold';
+  if (game.getPlayer(building.getOwner())?.extRally === building.getIndex()) text += ', rally point';
   if (building.isUpgrading()) {
     text += `, becoming a ${buildingName(building.getUpgradeTo()).toLowerCase()}`;
   }
@@ -454,6 +464,10 @@ export function buildingActions(ctx: BoxContext, building: () => Building | null
   const items: (Widget | HTMLElement)[] = [];
   if (b !== null && b.isDone() && isProductionBuilding(b.getType())) {
     items.push(...productionControls(ctx, building));
+  }
+  // EXT (knight controls).
+  if (b !== null && b.isDone() && isMilitaryHouse(b.getType())) {
+    items.push(knightControls(ctx, building));
   }
   if (b !== null && b.isDone() && upgradeTarget(b.getType()) !== BuildingType.TypeNone) {
     items.push(upgradeControl(ctx, building));
@@ -522,6 +536,88 @@ function productionControls(ctx: BoxContext, building: () => Building | null): W
     })));
   }
   return controls;
+}
+
+/* EXT (knight controls): the stance of a guard hut, tower or fortress
+   (cmdSetBuildingStance) and the rally point of the player
+   (cmdSetRallyPoint, cmdClearRallyPoint), with what each does in words and
+   why a choice is not open. */
+function knightControls(ctx: BoxContext, building: () => Building | null): Widget {
+  const { game, player } = ctx;
+  const isRally = (cur: Building): boolean => player.extRally === cur.getIndex();
+  return wide(dynamic(
+    () => {
+      const cur = building();
+      if (cur === null) return '';
+      return [cur.getType(), cur.getStance(), isRally(cur), player.extRally !== 0].join('|');
+    },
+    () => {
+      const cur = building();
+      if (cur === null) return [];
+      const room = fullGarrison(cur.getType());
+      const rally = isRally(cur);
+      const holding = cur.isHolding();
+
+      const stance = wide(segmented({
+        label: 'Stance',
+        options: [
+          {
+            value: BuildingStance.Normal,
+            label: 'Normal',
+            title: 'The knight sliders decide how many knights stay. The others can go to an attack.',
+          },
+          {
+            value: BuildingStance.Hold,
+            label: 'Hold',
+            title: 'Keeps a full garrison of ' + room + ' knights and sends none to an attack.',
+          },
+        ],
+        get: () => building()?.getStance() ?? BuildingStance.Normal,
+        set: (value) => {
+          const now = building();
+          if (now === null || now.getStance() === value) return;
+          if (stanceRefusal(game, now.getPosition(), player, value) !== '') return;
+          cmdSetBuildingStance(game, now.getPosition(), value);
+        },
+      }));
+
+      const point = wide(toggle({
+        label: 'Rally point',
+        get: () => {
+          const now = building();
+          return now !== null && isRally(now);
+        },
+        set: (on) => {
+          const now = building();
+          if (now === null) return;
+          if (!on) {
+            if (isRally(now)) cmdClearRallyPoint(game);
+          } else if (rallyRefusal(game, now.getPosition(), player) === '') {
+            cmdSetRallyPoint(game, now.getPosition());
+          }
+        },
+        onText: 'Here',
+        offText: player.extRally !== 0 ? 'At another building' : 'None',
+        title: 'New knights from your castle and storehouses come to the rally point first while it has room, ' +
+          'and an attack takes its knights from there first. You have one rally point.',
+      }));
+
+      let text = 'The knight sliders decide how many knights stay here.';
+      if (holding) {
+        text = 'On Hold: keeps a full garrison of ' + room + ' knights and sends none to an attack. ' +
+          'A building on Hold cannot be the rally point.';
+      } else if (rally) {
+        text = 'Rally point: new knights come here first until ' + room + ' are inside, and an attack takes ' +
+          'knights from here first. The rally point cannot go on Hold.';
+      } else if (player.extRally !== 0) {
+        text += ' Making this the rally point moves it here.';
+      }
+      const note = el('p', 'bw-action-note', text);
+      note.setAttribute('role', 'status');
+      return [stance, point, note];
+    },
+    'bw-action-list',
+  ));
 }
 
 /* Knights a military building holds at most (Building::

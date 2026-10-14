@@ -5,22 +5,35 @@
 // as in that box. Not part of Freeserf.
 
 import type { Building } from '../../game/building';
+// EXT (knight controls): the forecast.
+import {
+  attackForce,
+  AttackVerdict,
+  forecastAttack,
+  kOwnLandFactor,
+  moralePercent,
+} from '../../game/knights';
+import type { AttackForce, AttackForecast } from '../../game/knights';
+import { SerfType } from '../../game/serf';
 import { attackRefusal, cmdStartAttack, isAttackBoxTarget, previewAttack } from '../../net/commands';
 import { AudioTypeSfx } from '../audio';
 import { PopupBoxType } from '../popup';
 import { buildingName } from '../production';
 import { actionsSection, objectHeader } from './building-parts';
 import type { BoxContext, BoxView, Widget } from './kit';
-import { relationName, teamName, ticksAsClock } from './names';
+import { relationName, serfName, teamName, ticksAsClock } from './names';
 import {
   button,
   buildingIcon,
   el,
   faceCanvas,
   fitHeight,
+  hint,
   iconCanvas,
+  numberGrid,
   numberRow,
   section,
+  serfIcon,
   stepper,
 } from './widgets';
 
@@ -173,6 +186,97 @@ function attackBox(ctx: BoxContext): BoxView {
     }),
   );
 
+  // EXT (knight controls): the forecast. What would go and how it is likely
+  // to end, before the player commits. It only reads the game. Of the
+  // defenders the window says what the map shows: how many there are (the
+  // height of the flag on the building), not their ranks.
+  const verdictWords: { [verdict: number]: string } = {
+    [AttackVerdict.LikelyWin]: 'Likely win',
+    [AttackVerdict.Even]: 'Even',
+    [AttackVerdict.LikelyLoss]: 'Likely loss',
+  };
+  interface Cast { key: string; force: AttackForce; forecast: AttackForecast; defenders: number }
+  let cast: Cast | null = null;
+  let recount = 0;
+  const forecast = (): Cast => {
+    const defenders = target === null ? 0 : target.getKnightCount();
+    const key = [attack.knightsAttacking, recount, defenders, player.getKnightMorale()].join('|');
+    if (cast === null || cast.key !== key) {
+      const force = attackForce(game, player, pinned, attack.knightsAttacking);
+      cast = {
+        key,
+        force,
+        forecast: forecastAttack(force.knights, defenders, player.getKnightMorale()),
+        defenders,
+      };
+    }
+    return cast;
+  };
+  const inTen = (chance: number): string => Math.floor((chance + 50) / 100) + ' in 10';
+  const ranks = [4, 3, 2, 1, 0];
+  win.add(section(
+    'Forecast',
+    numberRow({
+      label: 'Knights that go',
+      title: 'The knights your buildings would send now: the rally point first, then the nearest.',
+      get: () => {
+        const f = forecast().force;
+        if (f.knights.length === 0) return 'None';
+        return f.fromRally > 0 ? f.knights.length + ', ' + f.fromRally + ' from your rally point' : f.knights.length;
+      },
+    }),
+    numberGrid('Knights that go, by rank', ranks.map((rank) => ({
+      /* "Rank 5": the name of names.ts ("Knight, rank 5") is too long for
+         a tile of this window. */
+      label: 'Rank ' + (rank + 1),
+      title: serfName(SerfType.TypeKnight0 + rank),
+      icon: serfIcon(SerfType.TypeKnight0 + rank),
+      get: () => forecast().force.byRank[rank],
+    }))),
+    numberRow({
+      label: 'Defenders inside',
+      title: 'The flag on the building shows how many knights are inside. Their ranks do not show.',
+      get: () => forecast().defenders + ', ranks unknown',
+    }),
+    numberRow({
+      label: 'Morale of your knights',
+      title: 'On foreign land a knight fights with the morale of his player. Gold raises it.',
+      get: () => moralePercent(player.getKnightMorale()) + '%',
+    }),
+    numberRow({
+      label: 'Morale of the defenders',
+      title: 'A knight on land of his own player always fights at 100%.',
+      get: () => moralePercent(kOwnLandFactor) + '%, on their own land',
+    }),
+    numberRow({
+      label: 'Estimate',
+      title: 'From the rule of the duels: rank and morale decide each one, and the winner fights on.',
+      get: () => {
+        const f = forecast();
+        if (f.force.knights.length === 0) return 'No knights to send';
+        if (f.defenders === 0) return 'Nobody defends it';
+        return verdictWords[f.forecast.verdict] + ', about ' + inTen(f.forecast.chance);
+      },
+    }),
+    numberRow({
+      label: 'If they are all of rank 1',
+      get: () => {
+        const f = forecast();
+        return f.force.knights.length === 0 || f.defenders === 0 ? '' : 'About ' + inTen(f.forecast.best);
+      },
+    }),
+    numberRow({
+      label: 'If they are all of rank 5',
+      get: () => {
+        const f = forecast();
+        return f.force.knights.length === 0 || f.defenders === 0 ? '' : 'About ' + inTen(f.forecast.worst);
+      },
+    }),
+    hint('An estimate of your chance to take the building. It averages over the ranks the defenders may have ' +
+      'and counts only the knights that are there now.'),
+  ));
+  // EXT: end of the block.
+
   const start = button('Attack', () => {
     /* GAME OPTIONS: the command would be refused. */
     if (refusalText() !== '') {
@@ -227,6 +331,8 @@ function attackBox(ctx: BoxContext): BoxView {
          once a second, as the click on the building did. The command
          counts them once more when it runs. */
       if (ticks++ % 4 === 0) {
+        /* EXT (knight controls): and the forecast with them. */
+        recount++;
         const preview = previewAttack(player, pinned);
         attack.attackingKnights = preview.attackingKnights;
         attack.totalAttackingKnights = preview.totalAttackingKnights;

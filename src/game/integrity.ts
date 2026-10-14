@@ -23,7 +23,7 @@
 
 import type { Game } from './game';
 import { FLAG_MAX_RES_COUNT } from './flag';
-import { Building } from './building';
+import { Building, BuildingStance, BuildingType } from './building';
 import { SerfState } from './serf';
 import { MapObject } from './map';
 import { Direction } from './map-geometry';
@@ -47,6 +47,8 @@ export class IntegrityCheck {
     problems += IntegrityCheck.checkSerfs(game);
     // EXT: the offers and shipments of the trade (trade.ts).
     problems += IntegrityCheck.checkTrade(game, fix);
+    // EXT: the stances and the rally points of the knight controls.
+    problems += IntegrityCheck.checkKnightControls(game, fix);
     if (problems !== 0) {
       Log.Warn('integrity', problems, ' problem(s) found in the game state',
                (fix ? ', repaired where possible.' : '.'));
@@ -99,6 +101,58 @@ export class IntegrityCheck {
                  ' belongs to building ',
                  building.inventory.building);
         problems++;
+      }
+    }
+
+    // PORT: not in the C++. An inventory belongs to a building that exists
+    // and has it (an unfinished castle that burned used to leave its
+    // inventory behind; Building::burnup).
+    for (const inventory of game.inventories) {
+      const building = game.buildings.get(inventory.building);
+      if (building === null || building.inventory !== inventory) {
+        Log.Warn('integrity', 'inventory ', inventory.getIndex(),
+                 ' has no building ', inventory.building);
+        problems++;
+      }
+    }
+
+    return problems;
+  }
+
+  /* EXT: knight controls. Only a finished guard hut, tower or fortress
+     that is not burning has a stance, and the rally point of a player is
+     such a building of his own that is not on Hold. With fix the others
+     are put back to Normal and to no rally point. */
+  protected static checkKnightControls(game: Game, fix: boolean): number {
+    let problems = 0;
+    const takesStance = (building: Building): boolean => {
+      const type = building.getType();
+      return building.isDone() && !building.isBurning() &&
+        (type === BuildingType.TypeHut || type === BuildingType.TypeTower ||
+         type === BuildingType.TypeFortress);
+    };
+
+    for (const building of game.buildings) {
+      if (building.getIndex() === 0) continue;
+      if (building.extStance === BuildingStance.Normal) continue;
+      if (building.extStance !== BuildingStance.Hold || !takesStance(building)) {
+        Log.Warn('integrity', 'building ', building.getIndex(),
+                 ' has a stance it cannot have: ', building.extStance);
+        problems++;
+        if (fix) building.extStance = BuildingStance.Normal;
+      }
+    }
+
+    for (let i = 0; i < 4; i++) {
+      const player = game.getPlayer(i);
+      if (player === null || player.extRally === 0) continue;
+      const building = game.buildings.get(player.extRally);
+      if (building === null || building.getOwner() !== player.getIndex() ||
+          !takesStance(building) || building.isHolding()) {
+        Log.Warn('integrity', 'player ', player.getIndex(),
+                 ' has a rally point that is not one: building ', player.extRally);
+        problems++;
+        if (fix) player.extRally = 0;
       }
     }
 

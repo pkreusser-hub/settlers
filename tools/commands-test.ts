@@ -7,6 +7,8 @@ import { BuildingType } from '../src/game/building';
 import { UpgradeRefusal } from '../src/game/building';
 import { MapObject } from '../src/game/map';
 import { canCapBuilding, canPauseBuilding, upgradeRefusal } from '../src/net/commands';
+// EXT: for the knight controls block of run().
+import { rallyRefusal, stanceRefusal } from '../src/net/commands';
 import { InventoryMode } from '../src/game/inventory';
 import { Road } from '../src/game/map';
 import { GameInfo } from '../src/game/mission';
@@ -740,6 +742,81 @@ function run(): string[] {
       }
       check(out, `the hut is a tower after ${upgraded} updates`,
             !hut.isUpgrading() && hut.getType() === BuildingType.TypeTower);
+
+      // ---------------------------------------------------------------------
+      // EXT: knight controls (setBuildingStance, setRallyPoint,
+      // clearRallyPoint). tools/knights-test.ts checks what they do to the
+      // knights; here: who may issue them and with which arguments. The
+      // tower (the hut of before) and the small hut are finished by now.
+      {
+        const tower = hut;
+        const smallHut = bld(smallHutPos);
+        const stances = (): string => [...game.buildings].map((b: any) => b.extStance).join('');
+        const none = stances();
+        check(out, 'the tower and the small hut are finished and on Normal, no rally point',
+              tower.isDone() && smallHut !== null && smallHut.isDone() && !none.includes('1') && player.extRally === 0);
+
+        // --- setBuildingStance
+        exec({ type: 'setBuildingStance', pos: hutPos, stance: 1 }, 1);
+        check(out, 'setBuildingStance by the other player does nothing', !tower.isHolding());
+        exec({ type: 'setBuildingStance', pos: castlePos, stance: 1 });
+        exec({ type: 'setBuildingStance', pos: lumberjackPos, stance: 1 });
+        check(out, 'setBuildingStance on the castle or a woodcutter does nothing',
+              stances() === none && stanceRefusal(game, castlePos, player, 1) === 'notMilitary' &&
+              stanceRefusal(game, lumberjackPos, player, 1) === 'notMilitary');
+        for (const stance of [2, -1, 0.5, '1' as unknown as number, undefined as unknown as number]) {
+          exec({ type: 'setBuildingStance', pos: hutPos, stance });
+        }
+        for (const pos of [-1, size, 0.5, 'x' as unknown as number]) {
+          exec({ type: 'setBuildingStance', pos, stance: 1 });
+          exec({ type: 'setRallyPoint', pos });
+        }
+        check(out, 'setBuildingStance and setRallyPoint with invalid arguments do nothing',
+              stances() === none && player.extRally === 0);
+        const sitePos = placeHut(false);
+        if (sitePos >= 0) {
+          exec({ type: 'setBuildingStance', pos: sitePos, stance: 1 });
+          exec({ type: 'setRallyPoint', pos: sitePos });
+          check(out, 'setBuildingStance and setRallyPoint on a hut that is not finished do nothing',
+                !stances().includes('1') && player.extRally === 0 &&
+                stanceRefusal(game, sitePos, player, 1) === 'notFinished' &&
+                rallyRefusal(game, sitePos, player) === 'notFinished');
+        }
+        exec({ type: 'setBuildingStance', pos: hutPos, stance: 1 });
+        exec({ type: 'setBuildingStance', pos: hutPos, stance: 1 });
+        const held = tower.isHolding();
+        exec({ type: 'setRallyPoint', pos: hutPos });
+        check(out, 'setBuildingStance Hold (twice is still Hold); setRallyPoint on the building on Hold does nothing',
+              held && tower.isHolding() && player.extRally === 0 && rallyRefusal(game, hutPos, player) === 'hold');
+        exec({ type: 'setBuildingStance', pos: hutPos, stance: 0 });
+        check(out, 'setBuildingStance Normal', !tower.isHolding() && !stances().includes('1'));
+
+        // --- setRallyPoint, clearRallyPoint
+        exec({ type: 'setRallyPoint', pos: hutPos }, 1);
+        exec({ type: 'setRallyPoint', pos: castlePos });
+        exec({ type: 'setRallyPoint', pos: lumberjackPos });
+        check(out, 'setRallyPoint by the other player, on the castle or on a woodcutter does nothing',
+              player.extRally === 0 && game.getPlayer(1).extRally === 0 &&
+              rallyRefusal(game, castlePos, player) === 'notMilitary');
+        exec({ type: 'setRallyPoint', pos: hutPos });
+        const first = player.getRallyBuilding() === tower;
+        exec({ type: 'setBuildingStance', pos: hutPos, stance: 1 });
+        check(out, 'setRallyPoint on the tower; setBuildingStance Hold on the rally point does nothing',
+              first && !tower.isHolding() && stanceRefusal(game, hutPos, player, 1) === 'rally');
+        exec({ type: 'setRallyPoint', pos: smallHutPos });
+        check(out, 'a second setRallyPoint moves the rally point to the small hut',
+              player.getRallyBuilding() === smallHut);
+        exec({ type: 'clearRallyPoint' }, 1);
+        const kept = player.getRallyBuilding() === smallHut;
+        exec({ type: 'clearRallyPoint' });
+        exec({ type: 'clearRallyPoint' });
+        check(out, 'clearRallyPoint by the other player does nothing; by the player it clears (twice is still none)',
+              kept && player.extRally === 0);
+        exec({ type: 'setRallyPoint', pos: smallHutPos });
+        exec({ type: 'demolishBuilding', pos: smallHutPos });
+        check(out, 'demolishing the rally point clears it', smallHut.isBurning() && player.extRally === 0);
+      }
+      // EXT: end of the knight controls block.
     }
   }
   // EXT: end of the building controls block.

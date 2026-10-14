@@ -26,7 +26,7 @@ import { ResourceType } from './resource';
 import type { ResourceMap } from './resource';
 import { SerfState, SerfType } from './serf';
 import type { Serf } from './serf';
-import { BuildingType, buildingGetScoreFromType } from './building';
+import { BuildingStance, BuildingType, buildingGetScoreFromType } from './building';
 import type { Building } from './building';
 import { InventoryMode } from './inventory';
 import type { Inventory } from './inventory';
@@ -312,6 +312,10 @@ export class Player extends GameObject {
   // EXT: the team, 0 none (saved as "team").
   team = 0;
 
+  // EXT: knight controls. The index of the military building that is the
+  // rally point of the player, 0 none (saved as "ext_rally" when set).
+  extRally = 0;
+
   constructor(game: Game, index: number) {
     super(game, index);
     for (let i = 0; i < 16; i++) {
@@ -577,6 +581,35 @@ export class Player extends GameObject {
   isDefeated(): boolean {
     return this.castle && !this.castleStanding;
   }
+
+  // -------------------------------------------------------------------------
+  // EXT: knight controls. The rally point.
+
+  /* The rally point of the player, or null. */
+  getRallyBuilding(): Building | null {
+    if (this.extRally === 0) return null;
+    return this.game.getBuilding(this.extRally);
+  }
+  setRally(building_: Building): void {
+    this.extRally = building_.getIndex();
+  }
+  clearRally(): void {
+    this.extRally = 0;
+  }
+  /* The building is burning or another player has taken it. */
+  extBuildingLost(index_: number): void {
+    if (this.extRally === index_) this.extRally = 0;
+  }
+  /* A military building of the player wants a knight. Whether the rally
+     point took him: it has room and a knight is on his way there now
+     (Building::update_military asks). */
+  extRallyTakesKnight(asker: Building): boolean {
+    if (this.extRally === 0 || this.extRally === asker.getIndex()) return false;
+    const rally = this.game.getBuilding(this.extRally);
+    if (rally == null || rally.getOwner() !== this.index) return false;
+    return rally.extRequestRallyKnight();
+  }
+  // EXT: end of the block.
 
   isEmergencyActive(): boolean {
     return this.emergencyActive;
@@ -878,6 +911,11 @@ export class Player extends GameObject {
     if (!building_.isDone() || building_.isBurning()) {
       return index_;
     }
+    // EXT: knight controls. A building on Hold gives no knight to an
+    // attack.
+    if (building_.isHolding()) {
+      return index_;
+    }
 
     let minLevel: number[];
     switch (building_.getType()) {
@@ -940,6 +978,21 @@ export class Player extends GameObject {
 
     this.attackingBuildingCount = count;
 
+    // EXT: knight controls. The rally point gives its knights first: it
+    // moves to the head of the list that start_attack() goes through. The
+    // other buildings keep their order, nearest first.
+    if (this.extRally !== 0) {
+      for (let i = 1; i < count; i++) {
+        if (this.attackingBuildings[i] === this.extRally) {
+          for (let j = i; j > 0; j--) {
+            this.attackingBuildings[j] = this.attackingBuildings[j - 1];
+          }
+          this.attackingBuildings[0] = this.extRally;
+          break;
+        }
+      }
+    }
+
     this.totalAttackingKnights = 0;
     for (let i = 0; i < 4; i++) {
       this.totalAttackingKnights += this.attackingKnights[i];
@@ -968,6 +1021,10 @@ export class Player extends GameObject {
       /* TODO building index may not be valid any more(?). */
       const b: Building = this.game.getBuilding(this.attackingBuildings[i])!;
       if (b.isBurning() || map.getOwner(b.getPosition()) !== this.index) {
+        continue;
+      }
+      // EXT: knight controls. Put on Hold since the knights were counted.
+      if (b.isHolding()) {
         continue;
       }
 
@@ -1140,6 +1197,11 @@ export class Player extends GameObject {
   buildingCaptured(building_: Building): void {
     const defPlayer: Player = this.game.getPlayer(building_.getOwner())!;
 
+    // EXT: knight controls. The stance and the rally point were the
+    // loser's.
+    building_.setStance(BuildingStance.Normal);
+    defPlayer.extBuildingLost(building_.getIndex());
+
     defPlayer.addNotification(MessageType.TypeLoseFight, building_.getPosition(), this.index);
     this.addNotification(MessageType.TypeWinFight, building_.getPosition(), this.index);
 
@@ -1177,6 +1239,14 @@ export class Player extends GameObject {
         this.castleStanding = false;
         this.castleScore -= 1;
       }
+    } else if (building_.getType() === BuildingType.TypeCastle) {
+      // PORT: an unfinished castle was never counted as incomplete
+      // (building_founded counts its score instead; the counts have no
+      // entry for a castle), so the original wrote past the end of
+      // incomplete_building_count here and left castle_standing set for a
+      // castle that is gone. The player has lost it like a finished one.
+      this.totalBuildingScore = u32(this.totalBuildingScore - buildingGetScoreFromType(building_.getType()));
+      this.castleStanding = false;
     } else {
       this.incompleteBuildingCount[building_.getType()] -= 1;
     }
@@ -1447,6 +1517,8 @@ export class Player extends GameObject {
   /* A deleted building is no longer designated (the original keeps
      reading the stale record). */
   buildingDeleted(index: number): void {
+    // EXT: knight controls (burnup() has cleared it before).
+    if (this.extRally === index) this.extRally = 0;
     if (this.lumberjackIndex === index) this.lumberjackIndex = 0;
     if (this.sawmillIndex === index) this.sawmillIndex = 0;
     if (this.stonecutterIndex === index) this.stonecutterIndex = 0;
@@ -2041,6 +2113,10 @@ export class Player extends GameObject {
     if (reader.hasValue('team')) {
       this.setTeam(reader.value('team').readInt());
     }
+    // EXT: knight controls; written only when a rally point is set.
+    if (reader.hasValue('ext_rally')) {
+      this.extRally = Math.max(0, reader.value('ext_rally').readInt());
+    }
     if (reader.hasValue('timers')) {
       const timers = reader.value('timers');
       const timersSize = timers.size();
@@ -2196,6 +2272,10 @@ export class Player extends GameObject {
     writer.value('military_max_gold').write(this.militaryMaxGold);
     // EXT: teams.
     writer.value('team').write(this.team);
+    // EXT: knight controls.
+    if (this.extRally !== 0) {
+      writer.value('ext_rally').write(this.extRally);
+    }
 
     /* The timers and messages of the player, as pairs or triples. */
     for (const timer of this.timers) {

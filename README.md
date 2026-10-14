@@ -113,14 +113,19 @@ None of these change a game that does not use them.
   shows the time left.
 - Teams: the host puts players in team A or B in the setup. Allies cannot
   attack each other, computer players included, and a team wins together.
+  A computer player settles 14 to 26 steps from an ally's castle, or for the
+  first castle of its team as far from the enemies as it can; it waits up to
+  two minutes for a human ally to place a castle first. Clicking an ally's
+  building opens a window that names them as your ally.
 - Extra carriers on busy roads: an option in the game setup, off by default.
   A road where three or more goods keep waiting at one end for about 30
   seconds gets one more carrier than its length allows. The carrier goes home
   when the road is quiet again. The window of a flag shows the carriers of
   each road and which roads are busy. Water roads and roads of 24 steps or
   more stay as they are.
-- Trading between players: an option in the game setup, off by default. From
-  the Trade page of your castle or a storehouse you offer another player 1 to
+- Trading between players: an option in the game setup, off by default. With
+  the Trade button in the top bar, the Trade page of your castle or a
+  storehouse, or the window of another player's building, you offer another player 1 to
   100 of one kind of goods, as a gift or for 1 to 100 of another kind. Any
   goods can be traded, weapons too; serfs and knights cannot. The other player
   has 3 minutes of game time to accept or decline, and you can have 4 offers

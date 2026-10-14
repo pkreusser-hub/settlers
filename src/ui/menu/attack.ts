@@ -20,6 +20,8 @@ import { AudioTypeSfx } from '../audio';
 import { PopupBoxType } from '../popup';
 import { buildingName } from '../production';
 import { actionsSection, objectHeader } from './building-parts';
+import { openTrade } from './trade';
+import { playerColorName } from './start';
 import type { BoxContext, BoxView, Widget } from './kit';
 import { relationName, serfName, teamName, ticksAsClock } from './names';
 import {
@@ -47,16 +49,26 @@ const distances: { label: string; icon: number }[] = [
   { label: 'Farthest, 25 to 32 fields away', icon: 219 },
 ];
 
-/* "Player 2", as the chat names the players. */
+/* "Red": the colour, as the trade window and the setup name the players. */
 function playerLabel(index: number): string {
-  return `Player ${index + 1}`;
+  return playerColorName(index);
 }
 
 /* What a player can do with a building of another player. The trade and
    alliance controls to come are added to this list; see actionsSection()
    of building-parts.ts. */
-export function enemyActions(_ctx: BoxContext, start: HTMLButtonElement): (Widget | HTMLElement)[] {
-  return [start];
+export function enemyActions(ctx: BoxContext, start: HTMLButtonElement | null, owner = -1): (Widget | HTMLElement)[] {
+  const items: (Widget | HTMLElement)[] = [];
+  if (start !== null) items.push(start);
+  // EXT: trading, only in a game with the rule.
+  if (owner >= 0 && ctx.game.getRules().trading) {
+    items.push(button(`Trade with ${playerLabel(owner)}`, () => {
+      ctx.sound(AudioTypeSfx.TypeSfxClick);
+      ctx.close();
+      openTrade(ctx.iface, owner);
+    }, { title: 'Open the trade window with this player picked for an offer' }));
+  }
+  return items;
 }
 
 function attackBox(ctx: BoxContext): BoxView {
@@ -130,6 +142,23 @@ function attackBox(ctx: BoxContext): BoxView {
       });
     })(),
   );
+
+  /* EXT (teams): the building of an ally is not a target. Its window says
+     who holds it and offers trade instead of the attack controls. */
+  if (target !== null && game.isAllied(player.getIndex(), target.getOwner())) {
+    const owner = target.getOwner();
+    win.setTitle(`Ally: ${playerLabel(owner)}`);
+    win.setPattern('green');
+    win.add(hint(`${playerLabel(owner)} is on your team. Allies cannot attack each other and win together.`));
+    win.add(actionsSection(enemyActions(ctx, null, owner)));
+    win.foot().append(button('Close', () => ctx.close(), { icon: iconCanvas(60) }));
+    return {
+      update: () => {
+        target = findTarget();
+        if (target === null) ctx.close();
+      },
+    };
+  }
 
   const limit = (): number => Math.min(attack.totalAttackingKnights, 100);
 
@@ -311,7 +340,7 @@ function attackBox(ctx: BoxContext): BoxView {
   };
   showRefusal();
 
-  win.add(actionsSection([refusal, ...enemyActions(ctx, start)]));
+  win.add(actionsSection([refusal, ...enemyActions(ctx, start, target === null ? -1 : target.getOwner())]));
   win.initialFocus = start;
   win.foot().append(
     /* ACTION_CLOSE_ATTACK_BOX. */

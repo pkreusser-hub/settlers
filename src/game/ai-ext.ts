@@ -533,3 +533,87 @@ export function afterStep(player: Player, slot: number): void {
     default: break;
   }
 }
+
+// ---------------------------------------------------------------------------
+// EXT (teams): where a computer player with allies puts its castle.
+//
+// The original picks the best of a few random sites anywhere on the map, so
+// team mates end up far apart. With teams, a computer player settles near an
+// ally whose castle stands: on a free site 14 to 26 steps from the nearest
+// allied castle, as far from enemy castles as it can, then as close to the
+// ally as it can. Without an allied castle yet it waits up to two minutes of
+// game time for a human ally to place one, then picks as the original does.
+// Integer only, no random draws, sites tried in a fixed order.
+
+const TEAM_SITE_MIN = 14;
+const TEAM_SITE_MAX = 26;
+const TEAM_WAIT_TICKS = 12000;
+
+/* Steps between two places on the hexagonal map. */
+function steps(map: { distX(a: number, b: number): number; distY(a: number, b: number): number },
+               a: number, b: number): number {
+  const dx = map.distX(a, b);
+  const dy = map.distY(a, b);
+  if ((dx >= 0) === (dy >= 0)) return Math.max(Math.abs(dx), Math.abs(dy));
+  return Math.abs(dx) + Math.abs(dy);
+}
+
+/* null: no team rule here, place as the original does; -1: wait; else the
+   position to build the castle on. */
+export function teamCastleSite(player: Player): number | null {
+  const game = AI_GAME();
+  if (!game.hasTeams() || player.getTeam() === 0) return null;
+  const me = PLAYER_NUM(player);
+  const allied: number[] = [];
+  const enemy: number[] = [];
+  for (const b of game.buildings) {
+    if (b.getType() !== BuildingType.TypeCastle || b.isBurning()) continue;
+    if (b.getOwner() === me) return null;
+    (game.isAllied(me, b.getOwner()) ? allied : enemy).push(b.getPosition());
+  }
+  if (allied.length === 0) {
+    for (let i = 0; i < 4; i++) {
+      const other = game.getPlayer(i);
+      if (other === null || i === me || other.isAi() || other.hasCastle()) continue;
+      if (game.isAllied(me, i) && game.getTick() < TEAM_WAIT_TICKS) return -1;
+    }
+    if (enemy.length === 0) return null;
+    /* The first castle of the team: the free site farthest from the enemy
+       castles, every third field of the map tried. */
+    const map = game.getMap();
+    let far = -1;
+    let farDist = -1;
+    for (let row = 0; row < map.getRows(); row += 3) {
+      for (let col = 0; col < map.getCols(); col += 3) {
+        const pos = map.pos(col, row);
+        let nearEnemy = 1 << 20;
+        for (const e of enemy) nearEnemy = Math.min(nearEnemy, steps(map, e, pos));
+        if (nearEnemy <= farDist || !game.canBuildCastle(pos, player)) continue;
+        far = pos;
+        farDist = nearEnemy;
+      }
+    }
+    return far >= 0 ? far : null;
+  }
+  const map = game.getMap();
+  let best = -1;
+  let bestScore = -1;
+  for (const center of allied) {
+    for (let dy = -TEAM_SITE_MAX; dy <= TEAM_SITE_MAX; dy++) {
+      for (let dx = -TEAM_SITE_MAX; dx <= TEAM_SITE_MAX; dx++) {
+        const pos = map.posAdd(center, dx, dy);
+        let nearAlly = 1 << 20;
+        for (const a of allied) nearAlly = Math.min(nearAlly, steps(map, a, pos));
+        if (nearAlly < TEAM_SITE_MIN || nearAlly > TEAM_SITE_MAX) continue;
+        let nearEnemy = 200;
+        for (const e of enemy) nearEnemy = Math.min(nearEnemy, steps(map, e, pos));
+        const score = nearEnemy * 64 + (TEAM_SITE_MAX - nearAlly);
+        if (score <= bestScore) continue;
+        if (!game.canBuildCastle(pos, player)) continue;
+        best = pos;
+        bestScore = score;
+      }
+    }
+  }
+  return best >= 0 ? best : null;
+}

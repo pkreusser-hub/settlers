@@ -203,6 +203,16 @@ console.log('\n3. the victory of a team');
 {
   const game = withCastles([TEAM_A, TEAM_A, TEAM_B, TEAM_B]);
   check(`all four castles stand (${castles(game)})`, [0, 1, 2, 3].every((p) => castlePos(game, p) >= 0));
+  // EXT (teams): team mates settle near each other.
+  const map = game.getMap();
+  const dist = (p: number, q: number): number => {
+    const dx = map.distX(castlePos(game, p), castlePos(game, q));
+    const dy = map.distY(castlePos(game, p), castlePos(game, q));
+    return (dx >= 0) === (dy >= 0) ? Math.max(Math.abs(dx), Math.abs(dy)) : Math.abs(dx) + Math.abs(dy);
+  };
+  check(`team mates settle near each other: A ${dist(0, 1)} steps, B ${dist(2, 3)} steps apart; ` +
+        `enemies ${dist(0, 2)}, ${dist(0, 3)}, ${dist(1, 2)}, ${dist(1, 3)}`,
+        dist(0, 1) <= 26 && dist(2, 3) <= 26);
   statsPeriod(game);
   check('no winner while all castles stand', game.getWinningPlayer() === -1 && !game.isGameEndPending());
 

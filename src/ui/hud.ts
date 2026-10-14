@@ -26,6 +26,7 @@ import {
 } from './map-overlays';
 import type { LandClass } from './map-overlays';
 import { ticksAsClock } from './menu/names';
+import { openTrade } from './menu/trade';
 import { getMinimapPanel } from './minimap-panel';
 import { el, showHint } from './overlay-dom';
 import { prefBool, prefSetBool } from './prefs';
@@ -64,6 +65,9 @@ export class Hud {
   protected peaceGroup: HTMLElement;
   protected peaceText: HTMLElement;
   protected peaceShown = '';
+  // EXT: trading, shown only in a game with the rule.
+  protected tradeGroup: HTMLElement;
+  protected tradeButton: HTMLButtonElement;
   /* The View group. */
   protected landButton: HTMLButtonElement;
   protected trafficButton: HTMLButtonElement;
@@ -98,6 +102,14 @@ export class Hud {
     this.peaceText.className = 'hud-value';
     this.peaceGroup.append(this.peaceText);
     this.peaceGroup.hidden = true;
+
+    // EXT: trading.
+    this.tradeGroup = this.group('Players');
+    this.tradeButton = this.button('Trade', 'Offer goods to another player and answer offers', () => {
+      if (!openTrade(this.iface)) showHint('You have no castle or storehouse to trade from.');
+    });
+    this.tradeGroup.append(this.tradeButton);
+    this.tradeGroup.hidden = true;
 
     const file = this.group('Game');
     this.saveButton = this.button('Save', 'Save the game in this browser, under the date and time', () => {
@@ -287,6 +299,7 @@ export class Hud {
       this.peaceText.textContent = peace === '' ? '' : `${peace} left`;
       this.peaceGroup.hidden = peace === '';
     }
+    this.tradeGroup.hidden = !(game && game.getRules().trading);
     const viewport = this.iface.getViewport();
     this.spotsButton.disabled = viewport === null;
     this.spotsButton.setAttribute(

@@ -36,6 +36,8 @@ import { buildingHeader, dynamic } from './building-parts';
 import type { Pin } from './building-parts';
 import { inventoryBuilding, setInventoryTabs } from './inventory';
 import { registerBox } from './kit';
+import type { Interface } from '../interface';
+import { BuildingType } from '../../game/building';
 import type { BoxContext, BoxView, Widget } from './kit';
 import { relationName, resourceBoxOrder, resourceLabel, ticksAsClock } from './names';
 import { characterName, playerColorName } from './start';
@@ -121,6 +123,32 @@ function list(label: string, empty: string, signature: () => string, rows: () =>
   }, 'tr-part');
 }
 
+/* The player the next trade window offers to first: set by openTrade(). */
+let partnerWanted = -1;
+
+/* Open the trade window from anywhere (the Trade button of the top bar, the
+   window of another player's building): the window of the player's castle,
+   else of the first storehouse. partner, if given, is picked for the offer.
+   As the click on a building does, this sets player.tempIndex, a value of
+   the interface. */
+export function openTrade(iface: Interface, partner = -1): boolean {
+  const game = iface.getGame();
+  const player = iface.getPlayer();
+  if (game === null || player === null || !game.getRules().trading) return false;
+  let store: Building | null = null;
+  for (const b of game.buildings) {
+    if (b.getOwner() !== player.getIndex() || b.isBurning() || !b.isDone()) continue;
+    if (b.getInventory() === null) continue;
+    if (b.getType() === BuildingType.TypeCastle) { store = b; break; }
+    if (b.getType() === BuildingType.TypeStock && store === null) store = b;
+  }
+  if (store === null) return false;
+  partnerWanted = partner;
+  player.tempIndex = store.getIndex();
+  iface.openPopup(PopupBoxType.TypeTrade);
+  return true;
+}
+
 function tradeBox(ctx: BoxContext): BoxView {
   const { win, game, player } = ctx;
   const me = player.getIndex();
@@ -167,7 +195,8 @@ function tradeBox(ctx: BoxContext): BoxView {
     const other = game.getPlayer(index);
     if (other !== null && index !== me && other.isInGame()) others.push(index);
   }
-  let to = others.length > 0 ? others[0] : -1;
+  let to = others.includes(partnerWanted) ? partnerWanted : others.length > 0 ? others[0] : -1;
+  partnerWanted = -1;
   let give: ResourceType = ResourceType.TypePlank;
   let giveCount = 1;
   let want: ResourceType = ResourceType.TypeStone;

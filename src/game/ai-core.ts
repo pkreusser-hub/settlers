@@ -560,6 +560,19 @@ export function placeCastle(player: Player): void {
     }
   }
 
+  // EXT (teams): settle near an ally; see Ext.teamCastleSite().
+  const site = Ext.teamCastleSite(player);
+  if (site === -1) return;
+  if (site !== null) {
+    const map = AI_GAME().getMap();
+    player.ai.cursorCol = map.posCol(site);
+    player.ai.cursorRow = map.posRow(site);
+    player.ai.phase = 1;
+    player.ai.counter = 24;
+    AI_GAME().buildCastle(site, player);
+    return;
+  }
+
   while (true) {
     const loc = bestLocation(player, BuildingType.TypeCastle);
     if (loc == null) return;

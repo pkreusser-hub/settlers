@@ -6,7 +6,7 @@ import type { Command } from './command';
 
 // Bumped whenever the messages, the lockstep constants or the simulation
 // change in a way that two different builds could not play together.
-export const PROTOCOL_VERSION = 9;
+export const PROTOCOL_VERSION = 10;
 
 // Most human players of a game (the game has four players).
 export const MAX_HUMANS = 4;

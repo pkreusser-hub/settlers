@@ -10,7 +10,9 @@
 //                        rally point (Building.extStance, Player.extRally);
 //   - attackKnights():   the attack forecast of knights.ts decides whether
 //                        an attack starts and how many knights go;
-//   - proposeTrade():    trade offers (Game.trade).
+//   - proposeTrade():    trade offers (Game.trade);
+//   - planBuild():       the materials chain first and a budget for every
+//                        building started (ai-core.ts wantAndBuild).
 // ai-core.ts calls afterStep() after the management step of the original;
 // ai-manage.ts calls attackKnights() where the original counts its knights.
 //
@@ -30,7 +32,7 @@
 import { AI_GAME, PLAYER_NUM } from './ai-internal';
 import type { Building } from './building';
 import {
-  BuildingStance, BuildingType, UpgradeRefusal, fullGarrison, isProductionBuilding,
+  BuildingStance, BuildingType, UpgradeRefusal, constInfo, fullGarrison, isProductionBuilding,
   productionCapSteps, productionOutput, upgradeCost, upgradeTarget,
 } from './building';
 import { attackForce, forecastAttack } from './knights';
@@ -416,6 +418,146 @@ export function attackKnights(player: Player, target: Building): number {
     }
   }
   return all;
+}
+
+// ---------------------------------------------------------------------------
+// 6. The building plan.
+//
+// The original picks the most wanted building and starts it if the number
+// of unfinished sites is below a limit that reads the stock alone. Nothing
+// weighs the planks and stone the open sites still have to get, so on a
+// poor start the sites eat the stock before a stonecutter or a sawmill
+// stands, and the player is stuck. Here, before a building is started:
+//   - The materials chain comes first: lumberjack, sawmill, stonecutter, in
+//     that order, each as soon as the original wants it at all (it has a
+//     site and a worker), whatever else it wants more. The order fits the
+//     poorest start (6 planks, 2 stone): lumberjack and sawmill take 5
+//     planks and the 2 stone, and the stonecutter waits for new planks.
+//   - The stock is a budget: what the stocks hold less what the unfinished
+//     sites still need (less what waits at the sites or is on the way).
+//     While a part of the chain is not started its cost is kept back from
+//     every other building, and from the parts of the chain after it.
+//   - Until a sawmill works with a lumberjack, while the budget holds fewer
+//     than AI_PLAN_EARLY_PLANKS planks, nothing is started but the chain, a
+//     forester and huts (land, for a sawmill site).
+//   - A building is started only if its cost fits the budget. A material
+//     that is made already (a sawmill and a lumberjack for planks, a
+//     stonecutter or a stone mine for stone) may run AI_PLAN_OVERDRAW short
+//     per maker, since more is coming.
+//   - When the most wanted building does not fit, the most wanted one that
+//     does is started, if the original would have started it.
+//   - The chain may count on the reserve of the castle, which the emergency
+//     program releases to the chain alone; and an improved player does not
+//     demolish its sites in an emergency (Building.updateUnfinished).
+
+/* The materials chain, in the order it is started. */
+const AI_PLAN_CHAIN: BuildingType[] = [
+  BuildingType.TypeLumberjack, BuildingType.TypeSawmill, BuildingType.TypeStonecutter,
+];
+/* What may be started before the first planks are made: the chain, a
+   forester, and huts to win land for a sawmill. */
+const AI_PLAN_EARLY: BuildingType[] = [
+  ...AI_PLAN_CHAIN, BuildingType.TypeForester, BuildingType.TypeHut,
+];
+/* Below this many planks in the budget, and no sawmill working, only
+   AI_PLAN_EARLY is started. */
+export const AI_PLAN_EARLY_PLANKS = 15;
+/* How far short of a material may run per building that makes it, and at
+   most. */
+export const AI_PLAN_OVERDRAW = 4;
+export const AI_PLAN_OVERDRAW_MAX = 12;
+
+export interface AIBudget {
+  planks: number; /* What the stocks hold less what the sites still need. */
+  stone: number;
+  plankMakers: number; /* Finished sawmills, while a lumberjack stands. */
+  stoneMakers: number; /* Finished stonecutters and stone mines. */
+  /* The reserve the castle keeps back until it runs out (Player.extraPlanks,
+     extraStone): the emergency program gives it to the chain only. */
+  extraPlanks: number;
+  extraStone: number;
+  started: number[]; /* Buildings of each type, finished or not. */
+}
+
+/* The budget of the player as it stands. */
+export function budget(player: Player): AIBudget {
+  const game = AI_GAME();
+  const index = PLAYER_NUM(player);
+  const out: AIBudget = {
+    planks: game.getStockCount(index, ResourceType.TypePlank),
+    stone: game.getStockCount(index, ResourceType.TypeStone),
+    plankMakers: 0, stoneMakers: 0, extraPlanks: player.extraPlanks, extraStone: player.extraStone,
+    started: new Array<number>(25).fill(0),
+  };
+  let sawmills = 0;
+  let lumberjacks = 0;
+  for (const b of game.buildings) {
+    if (b.getIndex() === 0 || b.getOwner() !== index || b.isBurning()) continue;
+    const type = b.getType();
+    out.started[type] += 1;
+    if (!b.isDone()) {
+      if (type === BuildingType.TypeCastle) continue;
+      out.planks -= Math.max(0, b.stock[0].maximum - b.stock[0].available - b.stock[0].requested);
+      out.stone -= Math.max(0, b.stock[1].maximum - b.stock[1].available - b.stock[1].requested);
+      continue;
+    }
+    if (type === BuildingType.TypeSawmill) sawmills++;
+    if (type === BuildingType.TypeLumberjack) lumberjacks++;
+    if (type === BuildingType.TypeStonecutter || type === BuildingType.TypeStoneMine) out.stoneMakers++;
+  }
+  out.plankMakers = lumberjacks > 0 ? sawmills : 0;
+  return out;
+}
+
+/* Whether a building of the type fits the budget, with the cost of the
+   parts of the chain not started kept back: all of them for a building
+   outside the chain, those before it for a part of the chain. */
+export function fitsBudget(b: AIBudget, type: number): boolean {
+  if (type < 1 || type > 23) return true; /* a flag or a geologist: free */
+  /* No planks are made yet and few are left: only what leads to them, and
+     huts for land. */
+  if (b.plankMakers === 0 && b.planks < AI_PLAN_EARLY_PLANKS && !AI_PLAN_EARLY.includes(type)) {
+    return false;
+  }
+  const chain = AI_PLAN_CHAIN.includes(type);
+  let planks = b.planks + (chain ? b.extraPlanks : 0);
+  let stone = b.stone + (chain ? b.extraStone : 0);
+  for (const t of AI_PLAN_CHAIN) {
+    if (t === type) break;
+    if (b.started[t] > 0) continue;
+    planks -= constInfo()[t].planks;
+    stone -= constInfo()[t].stones;
+  }
+  const cost = constInfo()[type];
+  const plankSlack = Math.min(AI_PLAN_OVERDRAW_MAX, AI_PLAN_OVERDRAW * b.plankMakers);
+  const stoneSlack = Math.min(AI_PLAN_OVERDRAW_MAX, AI_PLAN_OVERDRAW * b.stoneMakers);
+  return planks + plankSlack >= cost.planks && stone + stoneSlack >= cost.stones;
+}
+
+/* The building type to start instead of `type` (the most wanted, -1 for
+   none), from the wants of this step (index type - 1); -1 to start none.
+   `threshold` is the want the original asks of a building it starts. */
+export function planBuild(player: Player, wants: number[], type: number, threshold: number): number {
+  const b = budget(player);
+  /* The chain first, in its order. */
+  for (const t of AI_PLAN_CHAIN) {
+    if (b.started[t] > 0) continue;
+    if ((wants[t - 1] & 0xffff) > 0 && fitsBudget(b, t)) return t;
+    /* Not yet possible (no site or no worker): the next part may be. */
+  }
+  if (type < 0) return -1;
+  if (type > 23) return type;
+  /* The most wanted that fits and that the original would start. */
+  let best = -1;
+  let bestWant = 0;
+  for (let t = 1; t <= 23; t++) {
+    const want = wants[t - 1] & 0xffff;
+    if (want < threshold || want <= bestWant) continue;
+    if (!fitsBudget(b, t)) continue;
+    best = t;
+    bestWant = want;
+  }
+  return best;
 }
 
 // ---------------------------------------------------------------------------

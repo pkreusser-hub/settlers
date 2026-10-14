@@ -154,7 +154,7 @@ console.log('1. stock presets');
   };
   check(`a castle at supplies 20 holds planks/stones: normal ${castleStock(STOCK_NORMAL, 20)}, ` +
     `poor ${castleStock(STOCK_POOR, 20)}, rich ${castleStock(STOCK_RICH, 20)}`,
-    castleStock(STOCK_NORMAL, 20) === '40/20' && castleStock(STOCK_POOR, 20) === '20/10' &&
+    castleStock(STOCK_NORMAL, 20) === '40/20' && castleStock(STOCK_POOR, 20) === '40/20' &&
     castleStock(STOCK_RICH, 20) === '60/30');
   for (const supplies of [0, 20, 40]) {
     const normal = stock(STOCK_NORMAL, supplies);
@@ -162,9 +162,17 @@ console.log('1. stock presets');
     const rich = stock(STOCK_RICH, supplies);
     const floor = stock(STOCK_NORMAL, 0);
     let ok = true;
+    /* Poor: the basics as normal, with a floor; the late goods a quarter;
+       the rest half, not below supplies 0. */
+    const basics: Record<number, number> = { [R.TypeLumber]: 4, [R.TypePlank]: 20, [R.TypeStone]: 10,
+      [R.TypeShovel]: 2, [R.TypeHammer]: 2, [R.TypeAxe]: 1, [R.TypeSaw]: 1, [R.TypePick]: 1 };
+    const late = [R.TypeBoat, R.TypeIronOre, R.TypeSteel, R.TypeCoal, R.TypeGoldOre, R.TypeGoldBar,
+      R.TypePincer, R.TypeSword, R.TypeShield] as number[];
     for (let r = 0; r < 26; r++) {
       const half = Math.ceil(normal[r] / 2);
-      if (poor[r] !== Math.max(half, floor[r])) ok = false;
+      const want = basics[r] !== undefined ? Math.max(normal[r], basics[r])
+        : late.includes(r) ? Math.floor(normal[r] / 4) : Math.max(half, Math.min(normal[r], floor[r]));
+      if (poor[r] !== want) ok = false;
       if (rich[r] !== normal[r] + half) ok = false;
     }
     check(`supplies ${supplies}: planks, stones, swords normal ${normal[R.TypePlank]}/${normal[R.TypeStone]}/${normal[R.TypeSword]}, ` +

@@ -6,7 +6,6 @@
 
 import type { Game } from '../game/game';
 import type { MapPos } from '../game/map';
-import { TRADE_TICKS_PER_STEP } from '../game/trade';
 import { CARAVAN_FRAMES, caravanSprite } from './art/caravan';
 import type { CaravanView } from './art/caravan';
 
@@ -31,13 +30,13 @@ export function collectCaravans(game: Game, toScreen: ToScreen): CaravanDraw[] {
     const [x0, y0] = toScreen(at.from);
     const [x1, y1] = toScreen(at.to);
     const dx = x1 - x0, dy = y1 - y0;
-    const x = x0 + (dx * at.ticks) / TRADE_TICKS_PER_STEP;
-    const y = y0 + (dy * at.ticks) / TRADE_TICKS_PER_STEP;
+    const x = x0 + (dx * at.ticks) / at.stepTicks;
+    const y = y0 + (dy * at.ticks) / at.stepTicks;
     const view: CaravanView = Math.abs(dx) >= Math.abs(dy) * 0.6 ? 'side' : dy > 0 ? 'front' : 'back';
-    /* one stride of the horse per step */
-    const frame = Math.floor((at.ticks * CARAVAN_FRAMES) / TRADE_TICKS_PER_STEP);
+    /* two strides of the horse per step */
+    const frame = Math.floor((at.ticks * 2 * CARAVAN_FRAMES) / at.stepTicks);
     const sprite = caravanSprite(view, frame, player.getColor(), view === 'side' && dx < 0);
-    const near = at.ticks * 2 < TRADE_TICKS_PER_STEP ? at.from : at.to;
+    const near = at.ticks * 2 < at.stepTicks ? at.from : at.to;
     out.push({
       row: map.posRow(near),
       /* feet on the point, the middle of the group over it */

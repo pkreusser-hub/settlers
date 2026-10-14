@@ -108,7 +108,12 @@ before.
 
 None of these change a game that does not use them.
 
-- Starting stock: Poor, Normal or Rich, chosen in the game setup.
+- Starting stock: Poor, Normal or Rich, chosen in the game setup. Normal is
+  what the supplies of each player give. Poor keeps the basics at that level
+  (at least 20 planks, 10 stone, 4 lumber, 2 shovels, 2 hammers and an axe,
+  saw and pick), halves the food and the other tools, and gives a quarter of
+  the ore, coal, steel, gold, pincers, boats, swords and shields. Rich is one
+  and a half times Normal.
 - Peace: nobody can attack for the first 10, 20, 30 or 60 minutes. The top bar
   shows the time left.
 - Teams: the host puts players in team A or B in the setup. Allies cannot
@@ -134,8 +139,8 @@ None of these change a game that does not use them.
   and each side sends a trader who leads a pack horse in the player's colour.
   He follows his own roads to the flag nearest the other store, crosses open
   country around water, buildings and stones to the nearest flag of the other
-  player, and takes their roads to the store, 0.8 seconds a step at normal
-  speed. The goods arrive with him, and he walks the same way home. If the
+  player, and takes their roads to the store, at the pace of a serf: slower
+  uphill, as on the roads. The goods arrive with him, and he walks the same way home. If the
   receiver has no castle or storehouse left he brings the goods back, and they
   are lost if the sender has none either. A player whose castle has
   fallen cannot trade. Allies and enemies trade alike. A computer player takes
@@ -173,6 +178,11 @@ Pause, cap, upgrade, stance and rally point are in the window of the building.
 
 - Computer players: Original or Improved, chosen in the game setup; Original
   is the default and plays exactly as before. Improved computer players also:
+  - build a lumberjack, a sawmill and a stonecutter before anything else,
+    and start a building only when their stores, less what their sites still
+    need, can pay for it. While they have no sawmill and fewer than 15
+    planks they build only those three, foresters and guard huts. They do not
+    tear down their own sites in the emergency program;
   - upgrade one border building facing an enemy at a time, when their stores
     hold the cost plus 20 planks and 15 stones, and not during the emergency
     program;

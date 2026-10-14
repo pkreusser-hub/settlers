@@ -8,7 +8,9 @@ import type { Command } from './command';
 // change in a way that two different builds could not play together.
 // 11: the state hash and the save carry the order of the free indexes (EXT).
 // 12: trade goods travel with a trader along a way (EXT, trade-route.ts).
-export const PROTOCOL_VERSION = 12;
+// 13: a trader takes a serf's time for each step, the Poor stock keeps the
+//     basics, the improved computer players plan their building (EXT).
+export const PROTOCOL_VERSION = 13;
 
 // Most human players of a game (the game has four players).
 export const MAX_HUMANS = 4;

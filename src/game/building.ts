@@ -1908,7 +1908,11 @@ export class Building extends GameObject {
        (Amiga @0xc07a / 0xc10e). In the stone branch the original tests the
        designated stonecutter the wrong way round (bne @0xc10c); not
        reproduced. */
-    if ((player.isOutOfPlanks() || player.isOutOfStone()) && !designated && player.isAi()) {
+    // EXT: an improved computer player (GameRules.aiLevel) starts only what
+    // its stock can pay for (ai-ext.ts planBuild) and keeps its sites: what
+    // a demolished site was given is lost.
+    if ((player.isOutOfPlanks() || player.isOutOfStone()) && !designated && player.isAi() &&
+        this.game.getAiLevelOf(this.getOwner()) < 1) {
       const rolls = (player.isOutOfPlanks() ? 1 : 0) + (player.isOutOfStone() ? 1 : 0);
       const limit = u16(~this.progress) >> 5;
       for (let i = 0; i < rolls; i++) {

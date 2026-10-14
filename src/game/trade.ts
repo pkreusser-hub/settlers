@@ -11,11 +11,12 @@
 // Roads of different players never join, so no carrier can bring goods
 // across a border. On accept the goods leave the stocks at once and travel
 // as shipments: a trader of the sender leads a pack horse along a way
-// worked out then (trade-route.ts), TRADE_TICKS_PER_STEP for each step. When
-// he gets there the goods go into a stock of the receiver the way a
-// delivered resource gets there (Building.requestedResourceDelivered), and
-// he walks the same way home. A shipment of a save made before the traders
-// has no way: it counts its ticks down and arrives, with nobody to see.
+// worked out then (trade-route.ts), each step taking as long as it takes a
+// serf (TRADE_STEP_TICKS). When he gets there the goods go into a stock of
+// the receiver the way a delivered resource gets there
+// (Building.requestedResourceDelivered), and he walks the same way home. A
+// shipment of a save made before the traders has no way: it counts its
+// ticks down and arrives, with nobody to see.
 //
 // Integers only. The lists are arrays in the order the entries were made.
 
@@ -44,8 +45,12 @@ export const TRADE_MAX_SHIPMENTS = 64;
 export const TRADE_DELAY_BASE = 1000;
 export const TRADE_DELAY_PER_TILE = 100;
 export const TRADE_DELAY_MAX = 12000;
-/* Ticks the trader takes for one step of his way. */
-export const TRADE_TICKS_PER_STEP = 80;
+/* Ticks the trader takes for one step of his way, by the height difference
+   of the step (-4..4, steeper counts as 4): the time of a serf walking it
+   (counterFromAnimation of serf.ts with the slope 32 of Serf.startWalking). */
+export const TRADE_STEP_TICKS = [511, 447, 383, 319, 255, 319, 511, 767, 1023];
+/* The ticks of a step on level ground. */
+export const TRADE_TICKS_LEVEL = TRADE_STEP_TICKS[4];
 
 /* The resources that can be traded: all 26 (weapons too). Serfs and knights
    are not goods. */
@@ -108,6 +113,9 @@ export interface TradeShipment {
   /* The way of the trader, from the flag of `from` to the flag of `to`;
      [] for a shipment of an older save. */
   way: MapPos[];
+  /* For each step of the way out, its height difference + 4 (0..8): the
+     index into TRADE_STEP_TICKS. Walked back, a step counts as 8 - it. */
+  slopes: number[];
 }
 
 /* What the trade messages carry in Message.data: the other player in bits
@@ -134,6 +142,13 @@ export function unpackTradeData(data: number): {
 
 function isInt(v: unknown, min: number, max: number): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
+}
+
+/* The ticks of the way out (back false) or home (back true). */
+function legTicks(shipment: TradeShipment, back: boolean): number {
+  let ticks = 0;
+  for (const v of shipment.slopes) ticks += TRADE_STEP_TICKS[back ? 8 - v : v];
+  return ticks;
 }
 
 export class Trade {
@@ -348,22 +363,47 @@ export class Trade {
                         res: ResourceType, count: number): TradeShipment {
     let way = tradeRoute(this.game, src, dst);
     if (way.length < 2) way = [];
-    const delay = way.length > 0 ? (way.length - 1) * TRADE_TICKS_PER_STEP : this.delay(src, dst);
-    return { from, to, inv: dst.getIndex(), res, count, left: delay, delay, back: false, way };
+    const map = this.game.getMap();
+    const slopes: number[] = [];
+    for (let i = 1; i < way.length; i++) {
+      const h = map.getHeight(way[i]) - map.getHeight(way[i - 1]);
+      slopes.push(Math.max(-4, Math.min(4, h)) + 4);
+    }
+    const shipment: TradeShipment = { from, to, inv: dst.getIndex(), res, count, left: 0, delay: 0,
+                                      back: false, way, slopes };
+    shipment.delay = way.length > 0 ? legTicks(shipment, false) : this.delay(src, dst);
+    shipment.left = shipment.delay;
+    return shipment;
+  }
+
+  /* The trader turns round: the ticks of the way back. */
+  protected turnBack(shipment: TradeShipment): void {
+    shipment.back = true;
+    if (shipment.way.length > 0) shipment.delay = legTicks(shipment, true);
+    shipment.left = shipment.delay;
   }
 
   /* Where the trader of a shipment is: the step of his way he left last,
      the ticks since, and whether he walks home. null for a shipment
      without a way. For the drawing of the map only. */
-  traderAt(shipment: TradeShipment): { from: MapPos; to: MapPos; ticks: number } | null {
+  traderAt(shipment: TradeShipment):
+      { from: MapPos; to: MapPos; ticks: number; stepTicks: number } | null {
     const way = shipment.way;
-    if (way.length < 2) return null;
-    const done = Math.max(0, Math.min(shipment.delay - shipment.left, shipment.delay - 1));
-    let step = Math.floor(done / TRADE_TICKS_PER_STEP);
-    const ticks = done - step * TRADE_TICKS_PER_STEP;
-    if (!shipment.back) return { from: way[step], to: way[step + 1], ticks };
-    step = way.length - 1 - step;
-    return { from: way[step], to: way[step - 1], ticks };
+    if (way.length < 2 || shipment.slopes.length !== way.length - 1) return null;
+    let done = Math.max(0, Math.min(shipment.delay - shipment.left, shipment.delay - 1));
+    const steps = way.length - 1;
+    for (let k = 0; k < steps; k++) {
+      /* the k-th step of this leg */
+      const i = shipment.back ? steps - 1 - k : k;
+      const stepTicks = TRADE_STEP_TICKS[shipment.back ? 8 - shipment.slopes[i] : shipment.slopes[i]];
+      if (done < stepTicks || k === steps - 1) {
+        return shipment.back
+          ? { from: way[i + 1], to: way[i], ticks: Math.min(done, stepTicks - 1), stepTicks }
+          : { from: way[i], to: way[i + 1], ticks: Math.min(done, stepTicks - 1), stepTicks };
+      }
+      done -= stepTicks;
+    }
+    return null;
   }
 
   /* The player the offer is for says no. */
@@ -432,8 +472,7 @@ export class Trade {
     const inventory = this.findStock(playerIndex, shipment.back ? 0 : shipment.inv);
     if (inventory === null) {
       if (!shipment.back) {
-        shipment.back = true;
-        shipment.left = shipment.delay;
+        this.turnBack(shipment);
         return;
       }
       for (let i = 0; i < shipment.count; i++) this.game.loseResource(shipment.res);
@@ -455,8 +494,7 @@ export class Trade {
     if (shipment.way.length > 0 && !shipment.back) {
       /* The trader walks home, his bags empty. */
       shipment.count = 0;
-      shipment.back = true;
-      shipment.left = shipment.delay;
+      this.turnBack(shipment);
     } else {
       this.shipments.splice(this.shipments.indexOf(shipment), 1);
     }
@@ -503,7 +541,8 @@ export class Trade {
         (s.way.length === 0
           ? isInt(s.count, 1, TRADE_MAX_AMOUNT) && isInt(s.delay, TRADE_DELAY_BASE, TRADE_DELAY_MAX)
           : this.wayIsValid(s.way) && isInt(s.count, s.back ? 0 : 1, TRADE_MAX_AMOUNT) &&
-            s.delay === (s.way.length - 1) * TRADE_TICKS_PER_STEP) &&
+            Array.isArray(s.slopes) && s.slopes.length === s.way.length - 1 &&
+            s.slopes.every((v) => isInt(v, 0, 8)) && s.delay === legTicks(s, s.back)) &&
         isInt(s.left, 1, s.delay);
       if (ok) {
         shipments.push(s);
@@ -560,6 +599,7 @@ export class Trade {
       mix(s.delay); mix(s.back ? 1 : 0);
       mix(s.way.length);
       for (const p of s.way) mix(p);
+      for (const v of s.slopes) mix(v);
     }
   }
 
@@ -594,6 +634,7 @@ export class Trade {
       if (s.way.length > 0) {
         w.value('way').write(s.way[0]);
         w.value('way').write(routeToText(this.game, s.way));
+        w.value('way').write(s.slopes.join(''));
       }
     });
   }
@@ -621,7 +662,7 @@ export class Trade {
       });
     }
     for (const r of reader.getSections('trade_shipment').sort(byNumber)) {
-      this.shipments.push({
+      const shipment: TradeShipment = {
         from: r.value('from').readInt(),
         to: r.value('to').readInt(),
         inv: r.value('inventory').readInt(),
@@ -634,7 +675,22 @@ export class Trade {
         way: r.hasValue('way')
           ? routeFromText(this.game, r.value('way').at(0).readInt(), r.value('way').at(1).readString()) ?? [-1]
           : [],
-      });
+        slopes: [],
+      };
+      if (shipment.way.length > 1) {
+        const text = r.value('way').size() > 2 ? r.value('way').at(2).readString() : '';
+        if (/^[0-8]*$/.test(text) && text !== '') {
+          for (const c of text) shipment.slopes.push(Number(c));
+        } else if (shipment.delay === (shipment.way.length - 1) * 80) {
+          /* A save of the first traders, 80 ticks a step: level ground
+             now, and the time left in proportion. */
+          shipment.slopes = new Array<number>(shipment.way.length - 1).fill(4);
+          const delay = legTicks(shipment, shipment.back);
+          shipment.left = Math.max(1, Math.floor((shipment.left * delay) / shipment.delay));
+          shipment.delay = delay;
+        }
+      }
+      this.shipments.push(shipment);
     }
   }
 }

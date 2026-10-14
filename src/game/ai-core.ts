@@ -1349,8 +1349,15 @@ export function wantAndBuild(player: Player): void {
       type = t;
     }
   }
-  if (type < 0) return;
-  if (best < W(ai.buildThreshold)) return;
+  // EXT: an improved computer player starts the materials chain first and
+  // only what its stock can pay for (ai-ext.ts planBuild).
+  if (Ext.isImproved(player)) {
+    type = Ext.planBuild(player, ai.buildWant, type, W(ai.buildThreshold));
+    if (type < 0) return;
+  } else {
+    if (type < 0) return;
+    if (best < W(ai.buildThreshold)) return;
+  }
 
   aiGame().buildBuildingType = type;
   ai.buildDamp[type - 1] = W(ai.buildDamp[type - 1]) >> 1;

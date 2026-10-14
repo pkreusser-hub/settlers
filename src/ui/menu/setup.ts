@@ -516,8 +516,8 @@ function gameOptionsSection(model: SetupModel): Widget {
   /* Inventory.applySuppliesPreset(). */
   const stockHelp = [
     'Normal: each castle starts with what the supplies of its player give.',
-    'Poor: each castle starts with half of that, but never less than supplies 0 give ' +
-      '(7 planks, 2 stones).',
+    'Poor: each castle keeps the basics (at least 20 planks, 10 stone and the tools for ' +
+      'the first buildings), half the food, and a quarter of the ore, coal, gold and weapons.',
     'Rich: each castle starts with one and a half times that.',
   ];
   const stockText = hint('');

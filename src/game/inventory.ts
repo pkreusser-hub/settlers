@@ -46,6 +46,32 @@ export interface InventoryOutQueue {
   dest: number;
 }
 
+/* EXT: the Poor stock preset, per resource, from the count of the normal
+   stock and of supplies 0:
+   - the basics, building materials and the tools of the first buildings:
+     the normal count, at least POOR_STOCK_FLOOR;
+   - food and the other tools of the early economy: half, rounded up, not
+     less than supplies 0 give;
+   - what the middle and the end of a game make (ore, coal, steel, gold, the
+     pincer, boats, swords and shields): a quarter, rounded down. */
+export const POOR_STOCK_FLOOR: Partial<Record<ResourceType, number>> = {
+  [ResourceType.TypeLumber]: 4, [ResourceType.TypePlank]: 20, [ResourceType.TypeStone]: 10,
+  [ResourceType.TypeShovel]: 2, [ResourceType.TypeHammer]: 2, [ResourceType.TypeAxe]: 1,
+  [ResourceType.TypeSaw]: 1, [ResourceType.TypePick]: 1,
+};
+export const POOR_STOCK_LATE: ResourceType[] = [
+  ResourceType.TypeBoat, ResourceType.TypeIronOre, ResourceType.TypeSteel, ResourceType.TypeCoal,
+  ResourceType.TypeGoldOre, ResourceType.TypeGoldBar, ResourceType.TypePincer,
+  ResourceType.TypeSword, ResourceType.TypeShield,
+];
+
+export function poorStockCount(res: ResourceType, normal: number, suppliesZero: number): number {
+  const floor = POOR_STOCK_FLOOR[res];
+  if (floor !== undefined) return Math.max(normal, floor);
+  if (POOR_STOCK_LATE.includes(res)) return normal >>> 2;
+  return Math.max((normal + 1) >>> 1, Math.min(normal, suppliesZero));
+}
+
 export class Inventory extends GameObject {
   static Mode = InventoryMode;
 
@@ -376,15 +402,14 @@ export class Inventory extends GameObject {
       this.resources.set(i as ResourceType, u32(t1 + (n >>> 16)));
     }
 
-    // EXT: stock presets. Poor (1) is half of each resource, rounded up, but
-    // not less than the stock of supplies 0; rich (2) is one and a half
-    // times each resource, rounded up.
+    // EXT: stock presets. Rich (2) is one and a half times each resource,
+    // rounded up. Poor (1) keeps the start of an economy and cuts what comes
+    // later (poorStockCount).
     if (preset === 1 || preset === 2) {
       for (let i = 0; i < 26; i++) {
         const count = this.res(i as ResourceType);
-        const half = (count + 1) >>> 1;
-        const scaled = preset === 1 ? Math.max(half, Math.min(count, suppliesTemplate[0][i]))
-                                    : count + half;
+        const scaled = preset === 1 ? poorStockCount(i as ResourceType, count, suppliesTemplate[0][i])
+                                    : count + ((count + 1) >>> 1);
         this.resources.set(i as ResourceType, u32(scaled));
       }
     }

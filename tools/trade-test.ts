@@ -43,7 +43,7 @@ import {
   TRADE_MAX_OPEN_OFFERS,
   TRADE_MAX_SHIPMENTS,
   TRADE_OFFER_TICKS,
-  TRADE_TICKS_PER_STEP,
+  TRADE_STEP_TICKS,
   TradeRefusal,
   unpackTradeData,
 } from '../src/game/trade';
@@ -234,6 +234,20 @@ function wayOk(game: Game, way: number[], a: number, b: number): boolean {
   return true;
 }
 
+/* The ticks a serf takes for each step of a way, from the heights of the
+   map (walked from the end when back). */
+function stepTimes(game: Game, way: number[], back: boolean): number[] {
+  const map = game.getMap();
+  const w = back ? way.slice().reverse() : way;
+  const out: number[] = [];
+  for (let i = 1; i < w.length; i++) {
+    const h = Math.max(-4, Math.min(4, map.getHeight(w[i]) - map.getHeight(w[i - 1])));
+    out.push(TRADE_STEP_TICKS[h + 4]);
+  }
+  return out;
+}
+const sum = (xs: number[]): number => xs.reduce((a, b) => a + b, 0);
+
 /* Update until the game has no shipment; the updates it took. */
 function untilArrived(game: Game, limit = 20000): number {
   let n = 0;
@@ -300,9 +314,11 @@ console.log('\n1. a gift and a swap between two people');
     unpackTradeData(told[0].data).count === 5 && unpackTradeData(told[0].data).count2 === 0);
   accept(game, 1, id);
   const s = game.trade.shipments[0];
-  const delay = s === undefined ? -1 : (s.way.length - 1) * TRADE_TICKS_PER_STEP;
+  const times = s === undefined ? [] : stepTimes(game, s.way, false);
+  const delay = sum(times);
+  const homeDelay = s === undefined ? -1 : sum(stepTimes(game, s.way, true));
   check(`player 1 accepts: the planks leave the stock of player 0 at once (${a0[R.TypePlank]} -> ` +
-    `${count(game, 0, R.TypePlank)}), one trader, ${s?.left} ticks for a way of ` +
+    `${count(game, 0, R.TypePlank)}), one trader, ${s?.left} ticks (a serf's pace, ${TRADE_STEP_TICKS[4]} a level step) for a way of ` +
     `${s?.way.length - 1} steps from flag to flag (${steps(game, castlePos(game, 0), castlePos(game, 1))} straight)`,
     s !== undefined && wayOk(game, s.way, 0, 1) &&
     s.way.length - 1 >= steps(game, castlePos(game, 0), castlePos(game, 1)) &&
@@ -318,8 +334,12 @@ console.log('\n1. a gift and a swap between two people');
   const half = Math.floor(delay / speed / 2);
   for (let i = 0; i < half; i++) { game.update(); plain.update(); }
   const mid = game.trade.traderAt(s);
-  check(`half way the trader stands on his way: step ${mid === null ? -1 : s.way.indexOf(mid.from)}`,
-    mid !== null && Math.abs(s.way.indexOf(mid.from) - Math.floor((s.way.length - 1) / 2)) <= 1 &&
+  /* The step a serf would be on after that time. */
+  let midStep = 0;
+  for (let t = half * speed; midStep < times.length - 1 && t >= times[midStep]; midStep++) t -= times[midStep];
+  check(`half way the trader stands where a serf would: step ${mid === null ? -1 : s.way.indexOf(mid.from)} ` +
+    `of ${times.length}, ${mid?.stepTicks} ticks for it`,
+    mid !== null && s.way.indexOf(mid.from) === midStep && mid.stepTicks === times[midStep] &&
     s.way.indexOf(mid.to) === s.way.indexOf(mid.from) + 1 && count(game, 1, R.TypePlank) === b0[R.TypePlank]);
   let n = half + untilDelivered(game);
   for (let i = half; i < n; i++) plain.update();
@@ -340,11 +360,11 @@ console.log('\n1. a gift and a swap between two people');
     unpackTradeData(arrived[0].data).code === 0);
   const home = game.trade.shipments[0];
   check('the trader walks home the same way, his bags empty',
-    game.trade.shipments.length === 1 && home.count === 0 && home.back && home.left === delay &&
+    game.trade.shipments.length === 1 && home.count === 0 && home.back && home.left === homeDelay &&
     game.trade.traderAt(home)?.from === s.way[s.way.length - 1]);
   n = arrive();
-  check(`he is home after ${n} updates and the stocks are as they were`,
-    n === Math.ceil(delay / speed) && game.trade.shipments.length === 0 &&
+  check(`he is home after ${n} updates (${homeDelay} ticks) and the stocks are as they were`,
+    n === Math.ceil(homeDelay / speed) && game.trade.shipments.length === 0 &&
     stock(game, 0).join() === expected(0) && stock(game, 1).join() === expected(1) &&
     tradeMessages(game, 0).length === 0 && tradeMessages(game, 1).length === 0);
 
@@ -628,6 +648,7 @@ console.log('\n4. a player without a stock');
   const fromB = offer(game, 1, 0, R.TypeStone, 1);
   const other = offer(game, 0, 2, R.TypeStone, 1);
   const delay = game.trade.shipments[0].delay;
+  const homeDelay = sum(stepTimes(game, game.trade.shipments[0].way, true));
   messages(game, 0);
   check('two shipments are under way to player 1, three offers are open',
     game.trade.shipments.length === 2 && game.trade.offers.length === 3 &&
@@ -651,15 +672,15 @@ console.log('\n4. a player without a stock');
     game.update();
     n++;
   }
-  check(`after ${n} updates the shipments find no stock of player 1 and turn back (${delay} ticks again)`,
+  check(`after ${n} updates the shipments find no stock of player 1 and turn back (${homeDelay} ticks home)`,
     n === Math.ceil(delay / speed) && game.trade.shipments.length === 2 &&
-    game.trade.shipments.every((s) => s.back && s.left === delay) && game.getGoldTotal() === gold);
+    game.trade.shipments.every((s) => s.back && s.left === homeDelay) && game.getGoldTotal() === gold);
   check('integrity with shipments on the way back: 0 problems', integrity(game) === 0);
   const m = untilArrived(game);
   const back = tradeMessages(game, 0).filter((msg) => msg.type === MessageType.TypeTradeArrived);
   check(`${m} updates later they are back: player 0 has ${count(game, 0, R.TypePlank)} planks and ` +
     `${count(game, 0, R.TypeGoldBar)} gold bars again and is told so`,
-    m === Math.ceil(delay / speed) && count(game, 0, R.TypePlank) === a0[R.TypePlank] &&
+    m === Math.ceil(homeDelay / speed) && count(game, 0, R.TypePlank) === a0[R.TypePlank] &&
     count(game, 0, R.TypeGoldBar) === a0[R.TypeGoldBar] && game.getGoldTotal() === gold &&
     back.length === 2 && back.every((msg) => unpackTradeData(msg.data).code === 1 &&
                                              unpackTradeData(msg.data).other === 1 &&
@@ -807,6 +828,26 @@ console.log('\n6. the save');
     a.trade.nextId === game.trade.nextId && stateHash(a) === stateHash(game));
   check('integrity of the loaded game: 0 problems', integrity(a) === 0);
 
+  /* The file as the first traders wrote it: 80 ticks a step and no slopes.
+     Loaded, the walk is on level ground at a serf's pace, as far along. */
+  let section = '';
+  const first = lines.map((line) => {
+    if (line.startsWith('[')) section = line;
+    if (!section.startsWith('[trade_shipment')) return line;
+    let m = /^(\s*way\s*=\s*)(\d+),([0-5]+),[0-8]+\s*$/.exec(line);
+    if (m !== null) return `${m[1]}${m[2]},${m[3]}`;
+    m = /^(\s*(delay|left)\s*=\s*)\d+\s*$/.exec(line);
+    if (m === null) return line;
+    const steps = game.trade.shipments[Number(/\d+/.exec(section)![0])].way.length - 1;
+    return `${m[1]}${m[2] === 'delay' ? steps * 80 : steps * 40}`;
+  }).join('\n');
+  const firstGame = load(first);
+  check('a file of the first traders loads: level steps, half way still half way',
+    firstGame.trade.shipments.length === 2 && firstGame.trade.shipments.every((sh) =>
+      sh.slopes.length === sh.way.length - 1 && sh.slopes.every((v) => v === 4) &&
+      sh.delay === (sh.way.length - 1) * TRADE_STEP_TICKS[4] && sh.left === Math.floor(sh.delay / 2)) &&
+    integrity(firstGame) === 0);
+
   const planks = count(a, 1, R.TypePlank);
   const fish = count(a, 0, R.TypeFish);
   let equal = true;
@@ -825,7 +866,8 @@ console.log('\n6. the save');
   accept(a, 0, open);
   accept(b, 0, open);
   accept(game, 0, open);
-  for (let i = 0; i < 3000; i++) {
+  /* There and back at a serf's pace. */
+  for (let i = 0; i < 9000; i++) {
     game.update();
     a.update();
     b.update();
